@@ -1,0 +1,18 @@
+# Editable install of every Benchcraft package for local development.
+# lazycore must come first since every other package depends on it.
+#
+# Usage: pip install -r requirements-dev.txt
+#
+# To pull in a package's optional extras (e.g. automl's ONNX export path),
+# install that package directly instead, e.g.:
+#   pip install -e "packages/automl[onnx,dev]"
+
+-e packages/lazycore[dev]
+-e packages/automl[dev]
+-e packages/lazyclean[dev]
+-e packages/lazyforecast[dev]
+-e packages/lazygraph[dev]
+-e packages/lazyvision[dev]
+-e packages/lazytune[dev]
+-e packages/lazyred[dev]
+-e packages/lazyagent[dev]
