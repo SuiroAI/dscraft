@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "benchcraft-lazyagent"
+name = "benchcraft-agent"
 version = "0.1.0"
-description = "Benchcraft LazyAgent: a bring-your-own-agent AgentAdapter pattern -- a rule-based reference agent executes file-manipulation tool-use tasks through the shared lazycore sandbox executor, scored for success/latency and reported via OTel GenAI telemetry."
+description = "Benchcraft Agent: a bring-your-own-agent AgentAdapter pattern -- a rule-based reference agent executes file-manipulation tool-use tasks through the shared lazycore sandbox executor, scored for success/latency and reported via OTel GenAI telemetry."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
@@ -25,14 +25,15 @@ classifiers = [
 # registry/router of supported frameworks (§2.8).
 #
 # lazycore is a local sibling package (packages/lazycore). It is declared
-# here as a bare (unpinned) dependency name -- matching the convention
-# established in packages/automl, packages/lazyforecast, packages/lazygraph,
-# and packages/lazytune -- so a normal `pip install` resolves it instead of
-# silently succeeding and failing at import time. It still must be
-# installed first (or made resolvable, e.g. via an editable install/local
-# index) since it is not published to PyPI -- see README "Installation".
+# here by its PyPI distribution name, benchcraft-core -- matching the
+# convention established in packages/automl, packages/lazyforecast,
+# packages/lazygraph, and packages/lazytune -- so a normal `pip install`
+# resolves it instead of silently succeeding and failing at import time. It
+# still must be installed first (or made resolvable, e.g. via an editable
+# install/local index) since it is not published to PyPI -- see README
+# "Installation".
 dependencies = [
-    "lazycore",
+    "benchcraft-core",
 ]
 
 [project.optional-dependencies]

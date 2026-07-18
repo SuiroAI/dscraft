@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "benchcraft-lazytune"
+name = "benchcraft-tune"
 version = "0.1.0"
-description = "Benchcraft LazyTune: Adapter-Factory pattern for local LLM fine-tuning -- BaseTrainingAdapter + a ProgrammaticAdapter doing real (tiny) LoRA fine-tuning via peft/transformers."
+description = "Benchcraft Tune: Adapter-Factory pattern for local LLM fine-tuning -- BaseTrainingAdapter + a ProgrammaticAdapter doing real (tiny) LoRA fine-tuning via peft/transformers."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
@@ -25,13 +25,13 @@ classifiers = [
 #
 # lazycore is a local sibling package (packages/lazycore) and, matching the
 # convention established in packages/automl/packages/lazyforecast/
-# packages/lazygraph, is declared here as a bare (unpinned) dependency name
-# -- pip resolves it from whatever index/editable install already provides
-# a "lazycore" distribution. Install it first -- `pip install -e
-# packages/lazycore` -- before installing this package. See README
-# "Installation".
+# packages/lazygraph, is declared here as a bare (unpinned) dependency by
+# its PyPI distribution name -- pip resolves it from whatever
+# index/editable install already provides a "benchcraft-core"
+# distribution. Install it first -- `pip install -e packages/lazycore` --
+# before installing this package. See README "Installation".
 dependencies = [
-    "lazycore",
+    "benchcraft-core",
     "torch>=2.1",
     "transformers>=4.40",
     "peft>=0.10",

@@ -1,4 +1,4 @@
-# benchcraft-lazyforecast
+# benchcraft-forecast
 
 A scaffold-depth implementation of one signature capability from
 Benchcraft's LazyForecast module (architecture doc Part 3, "Module 3:

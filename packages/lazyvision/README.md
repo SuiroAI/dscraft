@@ -1,4 +1,4 @@
-# benchcraft-lazyvision
+# benchcraft-vision
 
 Benchcraft's computer-vision module (internal codename "LazyVision",
 architecture doc Part 3 "Module 5: LazyVision"). This is a **scaffold-depth

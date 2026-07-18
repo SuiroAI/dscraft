@@ -1,4 +1,4 @@
-# benchcraft-lazytune
+# benchcraft-tune
 
 A scaffold-depth implementation of one signature capability from
 Benchcraft's LazyTune module (architecture doc Part 3, "Module 6:

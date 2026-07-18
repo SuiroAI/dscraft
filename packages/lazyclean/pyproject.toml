@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "benchcraft-lazyclean"
+name = "benchcraft-clean"
 version = "0.1.0"
-description = "Benchcraft LazyClean: ONNX Runtime (PyTorch-free) text embeddings feeding naive cosine-similarity near-duplicate detection (D4 scaffold)."
+description = "Benchcraft Data-Quality: ONNX Runtime (PyTorch-free) text embeddings feeding naive cosine-similarity near-duplicate detection (D4 scaffold)."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }

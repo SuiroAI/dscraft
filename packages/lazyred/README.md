@@ -1,4 +1,4 @@
-# benchcraft-lazyred
+# benchcraft-security
 
 A scaffold-depth implementation of one signature capability from
 Benchcraft's LazyRed module (architecture doc Part 3, "Module 7:

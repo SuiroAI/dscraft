@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "benchcraft-lazyvision"
+name = "benchcraft-vision"
 version = "0.1.0"
-description = "Benchcraft LazyVision: a concrete Tier-3 DenseMediaPipeline (decode/augment/to-dense-tensor) plus a small CNN classifier captured via torch.export and exported to ONNX."
+description = "Benchcraft Vision: a concrete Tier-3 DenseMediaPipeline (decode/augment/to-dense-tensor) plus a small CNN classifier captured via torch.export and exported to ONNX."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }

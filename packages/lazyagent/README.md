@@ -1,4 +1,4 @@
-# benchcraft-lazyagent
+# benchcraft-agent
 
 LazyAgent's signature capability at this scaffold's depth (architecture
 doc `Benchcraft_Unified_Architecture.md`, Part 3, "Module 8: LazyAgent"): a

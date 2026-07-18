@@ -107,9 +107,10 @@ what the ONNX conversion path actually needs, not an Arrow buffer.
 
 `lazycore` is a local sibling package (`packages/lazycore`), not a package
 published to PyPI. It **is** declared in `pyproject.toml`'s `dependencies`
-(as a bare, unpinned `"lazycore"`) so that a resolver run without it
-already installed fails fast with a clear "could not find lazycore" error
-instead of succeeding and then failing at import time inside
+(as a bare, unpinned `"benchcraft-core"`, its PyPI distribution name) so
+that a resolver run without it already installed fails fast with a clear
+"could not find benchcraft-core" error instead of succeeding and then
+failing at import time inside
 `benchcraft_automl.compile`. That declaration does **not** make a plain
 `pip install packages/automl` work in isolation, though -- hatchling/pip
 don't have a portable, idiomatic way to express a relative-path dependency

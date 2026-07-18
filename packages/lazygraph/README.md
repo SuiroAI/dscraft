@@ -1,4 +1,4 @@
-# benchcraft-lazygraph
+# benchcraft-graph
 
 Benchcraft's graph ML module (internal codename "LazyGraph", architecture
 doc Part 3 "Module 4: LazyGraph"). This is a **scaffold-depth pass**, not a

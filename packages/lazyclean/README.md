@@ -1,4 +1,4 @@
-# benchcraft-lazyclean
+# benchcraft-clean
 
 A scaffold-depth implementation of one signature capability from
 Benchcraft's LazyClean module (architecture doc Part 3, "Module 2:

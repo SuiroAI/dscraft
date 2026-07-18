@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "benchcraft-lazyred"
+name = "benchcraft-security"
 version = "0.1.0"
-description = "Benchcraft LazyRed: a BaseSecurityAdapter pattern for local-target red-teaming -- a real prompt-injection probe/detector loop run through the shared lazycore sandbox executor, with OWASP-mapped OTel findings and a small pass/fail leaderboard."
+description = "Benchcraft Security: a BaseSecurityAdapter pattern for local-target red-teaming -- a real prompt-injection probe/detector loop run through the shared lazycore sandbox executor, with OWASP-mapped OTel findings and a small pass/fail leaderboard."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }

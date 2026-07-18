@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "benchcraft-lazygraph"
+name = "benchcraft-graph"
 version = "0.1.0"
-description = "Benchcraft LazyGraph: a concrete Tier-2 sparse graph tensor adapter (PyG COO <-> SciPy CSR/CSC bridge) plus a minimal GCN forward pass built on it."
+description = "Benchcraft Graph: a concrete Tier-2 sparse graph tensor adapter (PyG COO <-> SciPy CSR/CSC bridge) plus a minimal GCN forward pass built on it."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
@@ -33,18 +33,19 @@ classifiers = [
 # coarsening/sampling via `torch-cluster` is out of scope for this narrow
 # pass (see README "Deferred").
 #
-# lazycore is a local sibling package (packages/lazycore), not a package
-# published to PyPI under that exact name/version -- hatchling/pip do not
-# have a portable, idiomatic way to express a relative-path dependency in
-# pyproject.toml metadata (unlike e.g. Poetry's `path = "../lazycore"`
-# extra), so this does not pin a version. It is still declared as a bare
-# dependency (matching packages/automl's convention) so that a clean
-# install fails fast with a clear "could not find lazycore" error instead
-# of succeeding and then failing at import time inside `lazycore.data`.
-# It must be installed first: `pip install -e packages/lazycore` before
-# installing this package. See README "Installation".
+# lazycore is a local sibling package (packages/lazycore), not yet a package
+# published to PyPI -- hatchling/pip do not have a portable, idiomatic way
+# to express a relative-path dependency in pyproject.toml metadata (unlike
+# e.g. Poetry's `path = "../lazycore"` extra), so this does not pin a
+# version. It is still declared here by its PyPI distribution name,
+# benchcraft-core (matching packages/automl's convention) so that a
+# clean install fails fast with a clear "could not find benchcraft-core"
+# error instead of succeeding and then failing at import time inside
+# `lazycore.data`. It must be installed first: `pip install -e
+# packages/lazycore` before installing this package. See README
+# "Installation".
 dependencies = [
-    "lazycore",
+    "benchcraft-core",
     "numpy>=1.24",
     "scipy>=1.11",
     "torch>=2.2",

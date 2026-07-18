@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "lazycore"
+name = "benchcraft-core"
 version = "0.1.0"
-description = "Benchcraft LazyCore: the thin, shared substrate used by all Benchcraft modules (data-tier conventions, OTel GenAI telemetry helpers, license-isolation policy)."
+description = "Benchcraft Core: the thin, shared substrate used by all Benchcraft modules (data-tier conventions, OTel GenAI telemetry helpers, license-isolation policy)."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
