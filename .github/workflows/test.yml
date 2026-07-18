@@ -1,0 +1,124 @@
+name: Test
+
+# Runs the real pytest suite for every independently-installable package
+# under packages/. This exists because CodeRabbit (the required status
+# check on main) reviews code quality/style/docs -- it does not execute
+# any test suite. Without this workflow, nothing automated verifies that
+# `pytest packages/<name>/tests` actually passes before a PR can merge.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: test (${{ matrix.package }})
+    runs-on: ${{ matrix.runs-on }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # lazycore has no inter-package dependency and must be installed
+          # first for every other package (see requirements-dev.txt).
+          - package: lazycore
+            extras: dev
+            runs-on: ubuntu-latest
+          # automl's ONNX export path (.compile() -> skl2onnx) is behind
+          # the optional `onnx` extra, not the core dependency set.
+          - package: automl
+            extras: dev,onnx
+            runs-on: ubuntu-latest
+          - package: lazyclean
+            extras: dev
+            runs-on: ubuntu-latest
+          - package: lazyforecast
+            extras: dev
+            runs-on: ubuntu-latest
+          # Heavy: torch + torch_geometric.
+          - package: lazygraph
+            extras: dev
+            runs-on: ubuntu-latest
+          # Heavy: torch + onnx + onnxscript.
+          - package: lazyvision
+            extras: dev
+            runs-on: ubuntu-latest
+          # Heavy: torch + transformers + peft.
+          - package: lazytune
+            extras: dev
+            runs-on: ubuntu-latest
+          # lazyred and lazyagent's test suites exercise the *real*
+          # lazycore sandbox executor (not a mock). Per CLAUDE.md/the
+          # architecture doc (Mac sandboxing uses Seatbelt; the Linux
+          # namespace backend is an explicit, documented, unimplemented
+          # stub that always raises SandboxBackendUnavailableError), these
+          # tests can only genuinely pass on macOS today. Running them on
+          # ubuntu-latest doesn't test "the same thing but on Linux" --
+          # it deterministically fails by design, every time, regardless
+          # of any real regression. Use a real Apple Silicon runner so
+          # this job actually exercises the intended code path, matching
+          # this repo's stated primary reference platform.
+          - package: lazyred
+            extras: dev
+            runs-on: macos-14
+          - package: lazyagent
+            extras: dev
+            runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            packages/lazycore/pyproject.toml
+            packages/${{ matrix.package }}/pyproject.toml
+
+      - name: Install lazycore (must precede every other package)
+        run: pip install -e "packages/lazycore[dev]"
+
+      - name: Install ${{ matrix.package }}
+        run: pip install -e "packages/${{ matrix.package }}[${{ matrix.extras }}]"
+
+      - name: Run pytest
+        run: pytest packages/${{ matrix.package }}/tests
+
+  # Lightweight "doc testing" companion to the pytest matrix above: this
+  # only checks that every packages/*/examples/*.py script is at least
+  # syntactically valid Python (py_compile parses/compiles but does not
+  # execute or import anything, so it needs none of the packages' heavy
+  # runtime dependencies installed). It will not catch a broken import or
+  # a genuinely broken example, only outright syntax errors/typos -- a
+  # deliberately proportionate check for a young, fast-moving repo rather
+  # than a full "execute every README/example end-to-end" harness.
+  examples-syntax:
+    name: examples syntax check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Compile-check every package's examples
+        run: python -m py_compile packages/*/examples/*.py

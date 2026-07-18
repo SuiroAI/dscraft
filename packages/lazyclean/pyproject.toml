@@ -1,0 +1,44 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "benchcraft-lazyclean"
+version = "0.1.0"
+description = "Benchcraft LazyClean: ONNX Runtime (PyTorch-free) text embeddings feeding naive cosine-similarity near-duplicate detection (D4 scaffold)."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Benchcraft" }]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3 :: Only",
+]
+
+# Per architecture doc Part 3 ("Module 2: LazyClean"): embeddings are
+# generated via native ONNX Runtime specifically to avoid a PyTorch/
+# HuggingFace `transformers` dependency and to stay under ~100MB. This is a
+# hard constraint, not a preference -- do not add `torch` or `transformers`
+# here or in any optional extra, ever.
+#
+# lazycore is a local sibling package (packages/lazycore) and is not listed
+# here as a formal path dependency -- hatchling/pip do not have a portable,
+# idiomatic way to express a relative-path dependency in pyproject.toml
+# metadata (unlike e.g. Poetry's `path = "../lazycore"` extra). Matching the
+# convention already established in packages/automl/pyproject.toml: install
+# it first -- `pip install -e packages/lazycore` -- before installing this
+# package. See README "Installation".
+dependencies = [
+    "onnxruntime>=1.17",
+    "onnx>=1.15",
+    "numpy>=1.24",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/benchcraft_lazyclean"]

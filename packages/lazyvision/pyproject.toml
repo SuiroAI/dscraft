@@ -1,0 +1,81 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "benchcraft-lazyvision"
+version = "0.1.0"
+description = "Benchcraft LazyVision: a concrete Tier-3 DenseMediaPipeline (decode/augment/to-dense-tensor) plus a small CNN classifier captured via torch.export and exported to ONNX."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Benchcraft" }]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3 :: Only",
+]
+
+# Per architecture doc Part 3 ("Module 5: LazyVision"), §2.1 (Tier 3 dense
+# image/audio), and §2.5 (export backend 1: ONNX via `torch.export`): this
+# scaffold-depth pass implements exactly one signature capability -- a
+# concrete DenseMediaPipeline subclass plus a torch.export -> ONNX export
+# path for a small CNN classifier. Both halves of that capability require
+# torch unconditionally (there is no meaningful "pipeline without a dense
+# tensor backend" or "export without torch.export" degraded mode), so
+# torch/onnx/onnxruntime are core dependencies here, not optional extras --
+# matching the precedent set by packages/lazygraph (also PyTorch-heavy,
+# also declares torch as core) rather than packages/automl (whose ONNX path
+# genuinely is optional because the rest of that package works without it).
+#
+# torchvision is deliberately NOT a dependency: this pass uses synthetic
+# in-memory images (PIL-encoded bytes) for hermetic, network-free tests and
+# examples, per the task's "prefer whichever keeps tests hermetic/fast"
+# guidance -- no torchvision dataset download is needed.
+#
+# Licensing (CLAUDE.md licensing policy, architecture doc §2.2): this
+# package contains a plain CNN image classifier only. No object-detection
+# model of any kind is included, so the AGPL-3.0/GPL-3.0 detector-isolation
+# concern (Ultralytics YOLOv8/v11, Tsinghua YOLOv12, RTMDet) does not apply
+# to this pass. `ultralytics` and no other AGPL/GPL-licensed detector
+# package is anywhere in this dependency tree.
+#
+# lazycore is a local sibling package (packages/lazycore) and is not listed
+# here as a formal path dependency -- hatchling/pip do not have a portable,
+# idiomatic way to express a relative-path dependency in pyproject.toml
+# metadata. Matching the convention established in packages/automl,
+# packages/lazyclean, and packages/lazygraph: install it first --
+# `pip install -e packages/lazycore` -- before installing this package.
+# See README "Installation".
+dependencies = [
+    "numpy>=1.24",
+    "pillow>=10.0",
+    "torch>=2.5",
+    "onnx>=1.15",
+    "onnxruntime>=1.17",
+    # torch.onnx.export(..., dynamo=True) -- the API this package's export
+    # path uses (see export.py's module docstring) -- lowers through
+    # onnxscript internally. It is a hard runtime dependency of that torch
+    # API, not an incidental extra, so it is listed as a core dependency
+    # here rather than left as an undeclared transitive assumption.
+    "onnxscript>=0.1.0",
+]
+
+[project.optional-dependencies]
+# scikit-learn is dev/test-only here -- it plays no role in this package's
+# actual runtime logic (pipeline/model/export). It is pulled in purely to
+# source `sklearn.datasets.load_digits()`, a real (not synthetic), genuinely
+# bundled-as-package-data set of 8x8 handwritten digit images, so the test
+# suite can validate the decode -> augment -> to_dense_tensor -> TinyCNN ->
+# ONNX export path against real image data with no network access and no
+# external dataset download -- the same "add a validation-only dependency
+# without touching core runtime deps" pattern.
+# Pin style matches packages/automl's core scikit-learn dependency
+# (`scikit-learn>=1.3`) for consistency across the repo.
+dev = [
+    "pytest>=7.0",
+    "scikit-learn>=1.3",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/benchcraft_lazyvision"]

@@ -1,0 +1,55 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "benchcraft-automl"
+version = "0.1.0"
+description = "Benchcraft AutoML: clean-room tabular AutoML. This scaffold-depth pass implements .compile() -- fusing a fitted sklearn.pipeline.Pipeline into a single ONNX graph via skl2onnx."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Benchcraft" }]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3 :: Only",
+]
+
+# Per architecture doc Part 3 ("Module 1: AutoML"): core dependency surface
+# is minimal (numpy/pandas/scikit-learn only); boosting libraries, SHAP
+# explainability, and ONNX export are lazy-loaded optional extras. This
+# scaffold implements the ONNX export path only, so it is the sole optional
+# extra declared here.
+#
+# lazycore is a local sibling package (packages/lazycore), not a package
+# published to PyPI, so it is listed here by bare name only (no version
+# pin -- pinning a version for a package that isn't on any index would be
+# misleading). hatchling/pip do not have a portable, idiomatic way to
+# express a relative-path dependency in pyproject.toml metadata (unlike
+# e.g. Poetry's `path = "../lazycore"` extra), so this does not make a
+# plain `pip install packages/automl` work in isolation -- it must still
+# be installed first: `pip install -e packages/lazycore` before installing
+# this package (see README). Declaring it here means a resolver run
+# without lazycore already installed fails fast with a clear "could not
+# find lazycore" error instead of succeeding and then failing at import
+# time inside `lazycore.data`.
+dependencies = [
+    "numpy>=1.24",
+    "pandas>=2.0",
+    "scikit-learn>=1.3",
+    "lazycore",
+]
+
+[project.optional-dependencies]
+onnx = [
+    "skl2onnx>=1.16",
+    "onnx>=1.15",
+    "onnxruntime>=1.17",
+]
+dev = [
+    "pytest>=7.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/benchcraft_automl"]
