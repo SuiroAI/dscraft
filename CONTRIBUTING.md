@@ -1,4 +1,4 @@
-# Contributing to Benchcraft
+# Contributing to DSCraft
 
 This document describes the actual, currently-configured contribution and
 review workflow for this repository — verified against the live GitHub
@@ -9,22 +9,29 @@ for architecture, module conventions, and coding rules (packaging layout,
 
 ## 1. Local development setup
 
-Install `lazycore` first — every other package depends on it — then install
-the package you're working on:
+There is one package, `dscraft`, install it in editable mode with every
+subpackage's runtime and test dependencies:
 
 ```bash
-pip install -e packages/lazycore[dev]
-pip install -e packages/<name>[dev]
+pip install -e "packages/dscraft[dev,all]"
 ```
 
-Run that package's tests:
+Run the full suite:
 
 ```bash
-pytest packages/<name>/tests
+pytest packages/dscraft/tests
 ```
 
-See `CLAUDE.md`'s "Repository status" section for the full package list and
-the module dependency graph.
+Or install/test just the subpackage extras you're working on (e.g. to run
+only `forecast`'s tests without pulling in `torch`):
+
+```bash
+pip install -e "packages/dscraft[forecast,dev]"
+pytest packages/dscraft/tests/forecast
+```
+
+See `CLAUDE.md`'s "Repository status" section for the full subpackage list
+and the module dependency graph.
 
 ## 2. Branch protection on `main`
 
@@ -39,43 +46,59 @@ the module dependency graph.
   (`allow_force_pushes: false`, `allow_deletions: false`).
 - **`enforce_admins` is on** — repo admins are not exempt from any of the
   above.
-- **Required status checks** (all must pass before merge is allowed;
-  `strict: true` means the branch must also be up to date with `main`):
+- **Required status checks** (target state — see note below):
   - `CodeRabbit`
-  - `test (lazycore)`
+  - `test (core)`
   - `test (automl)`
-  - `test (lazyclean)`
-  - `test (lazyforecast)`
-  - `test (lazygraph)`
-  - `test (lazyvision)`
-  - `test (lazytune)`
-  - `test (lazyred)`
-  - `test (lazyagent)`
+  - `test (clean)`
+  - `test (eda)`
+  - `test (forecast)`
+  - `test (graph)`
+  - `test (vision)`
+  - `test (tune)`
+  - `test (security)`
+  - `test (agent)`
   - `examples syntax check`
 
+  **This list describes the intended/target state, not what's live on
+  GitHub yet.** The check names above assume `.github/workflows/test.yml`'s
+  matrix uses the new `dscraft` subpackage names (`core`, `automl`,
+  `clean`, `eda`, `forecast`, `graph`, `vision`, `tune`, `security`,
+  `agent`) as its `subpackage` matrix value, which is what determines each job's
+  display name. The actual GitHub branch-protection required-status-checks
+  configuration has **not** been updated to this list yet — that requires
+  a `gh api` call with a valid token, which is a separate, later step
+  gated on a fresh GitHub token being available. Until that step runs,
+  the live required-checks list on GitHub may still reference the old
+  nine-separate-package check names (`test (lazycore)`,
+  `test (automl)`, `test (lazyclean)`, etc.). Don't assume the list above
+  is already enforced; verify with the `gh api` command above before
+  relying on it.
+
 None of this is friction to route around — it's the intended safety net for
-a solo/small-team repo where a single bad merge to `main` would affect nine
-independently-packaged modules at once. If a check seems wrong for a given
-PR, the fix is to fix the PR (or, for a CodeRabbit finding that contradicts
-a locked architecture decision, to explain why in a PR comment — see §5),
-not to bypass the check.
+a solo/small-team repo where a single bad merge to `main` would break every
+subpackage of the one `dscraft` package at once. If a check seems wrong for
+a given PR, the fix is to fix the PR (or, for a CodeRabbit finding that
+contradicts a locked architecture decision, to explain why in a PR comment
+— see §5), not to bypass the check.
 
 ## 3. CI (`.github/workflows/test.yml`)
 
 CI runs on every push to `main` and every pull request targeting `main`.
 There are two jobs:
 
-- **`test` matrix** — one job per installable package, named `test
-  (<package>)`, each installing `lazycore[dev]` first and then that
-  package's own extras, then running `pytest packages/<package>/tests`.
-  The matrix covers all nine packages: `lazycore`, `automl`, `lazyclean`,
-  `lazyforecast`, `lazygraph`, `lazyvision`, `lazytune`, `lazyred`,
-  `lazyagent`.
-  - `automl` installs the `dev,onnx` extras (its `.compile()`→ONNX export
-    path is optional, not core).
-  - **`lazyred` and `lazyagent` run on `macos-14`, not `ubuntu-latest`.**
+- **`test` matrix** — one job per `dscraft` subpackage, named `test
+  (<subpackage>)`, each running a single `pip install -e
+  "packages/dscraft[<extras>,dev]"` install step (no more two-step
+  install-the-base-package-first-then-the-module dance — there's only one
+  package now) followed by `pytest packages/dscraft/tests/<subpackage>`.
+  The matrix covers all ten subpackages: `core`, `automl`, `clean`, `eda`,
+  `forecast`, `graph`, `vision`, `tune`, `security`, `agent`.
+  - `automl` installs the `automl,automl-onnx,dev` extras (its
+    `.compile()`→ONNX export path is optional, not core).
+  - **`security` and `agent` run on `macos-14`, not `ubuntu-latest`.**
     This is deliberate, not an oversight: their test suites exercise the
-    real `lazycore` sandbox executor (not a mock), and per `CLAUDE.md` /
+    real `dscraft.core` sandbox executor (not a mock), and per `CLAUDE.md` /
     the architecture doc, the Linux sandbox backend is an explicit,
     documented, unimplemented stub that always raises
     `SandboxBackendUnavailableError`. Running these suites on
@@ -83,11 +106,14 @@ There are two jobs:
     deterministically fail every time regardless of any real regression.
     `macos-14` gives them a real Apple Silicon runner with actual Seatbelt
     support, matching this repo's stated primary reference platform.
+  - The rest (`core`, `automl`, `clean`, `eda`, `forecast`, `graph`,
+    `vision`, `tune`) run on `ubuntu-latest`.
 - **`examples syntax check`** — runs `python -m py_compile` over every
-  `packages/*/examples/*.py` file. This only catches syntax errors/typos;
-  it does not import or execute the examples, so it needs none of the
-  packages' heavy runtime dependencies installed. It is a deliberately
-  lightweight check, not a substitute for actually running an example.
+  `packages/dscraft/examples/**/*.py` file. This only catches syntax
+  errors/typos; it does not import or execute the examples, so it needs
+  none of the subpackages' heavy runtime dependencies installed. It is a
+  deliberately lightweight check, not a substitute for actually running an
+  example.
 
 CI exists because CodeRabbit (§4) reviews code quality and style — it does
 not execute anything. Without this workflow, nothing automated verifies
@@ -137,16 +163,16 @@ a package a diff touches:
   description explicitly justifies why no test change is needed.
 - **`No scope-locked architecture violations`** (custom check, `warning`)
   — cross-references the diff against Part 4 ("Cross-Cutting Decisions
-  Reference Table") of `Benchcraft_Unified_Architecture.md` and fails,
+  Reference Table") of `DSCraft_Unified_Architecture.md` and fails,
   quoting the specific row(s) violated, if the diff does any of:
   1. Adds a shared LLM router, multi-provider LLM abstraction, or a
      `BaseTarget`/router-style base class meant to be shared across more
      than one module.
   2. Adds a new formal, typed inter-module data contract, shared manifest
-     schema, or MLflow-"flavors"-style interface between two Benchcraft
+     schema, or MLflow-"flavors"-style interface between two DSCraft
      modules before two real modules actually need to exchange data.
-  3. Adds code under `packages/lazycore/` that implements logic specific
-     to one non-lazycore module, rather than a shared
+  3. Adds code under `packages/dscraft/src/dscraft/core/` that implements
+     logic specific to one non-`core` subpackage, rather than a shared
      data-tier/OTel-schema/license-policy/sandbox-executor convention.
   4. Adds a cloud deployment target, a remote/hosted inference endpoint,
      or a non-local execution path for any module, including
@@ -154,7 +180,7 @@ a package a diff touches:
   5. Adds any implementation code (not comments/docs) for LazyEdge
      (edge/microcontroller compilation), which is fully deferred.
 
-  If `Benchcraft_Unified_Architecture.md` isn't present in the diff or
+  If `DSCraft_Unified_Architecture.md` isn't present in the diff or
   repo context, this check states that explicitly and passes with a note
   rather than failing blind.
 
@@ -242,7 +268,7 @@ repo. Follow it in order:
 3. **Triage every actionable CodeRabbit finding.** For each one, either:
    - **Fix it**, or
    - **Decline it with a citation**, if it contradicts a locked decision
-     in `Benchcraft_Unified_Architecture.md` Part 4 — leave a PR comment
+     in `DSCraft_Unified_Architecture.md` Part 4 — leave a PR comment
      replying to the finding, explaining why it's being declined, and
      citing the specific locked row it conflicts with.
 

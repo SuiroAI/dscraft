@@ -1,0 +1,227 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "dscraft"
+version = "0.1.0"
+description = "DSCraft: a unified, MIT-licensed, local-first ML tooling platform -- tabular AutoML, data cleaning, time-series forecasting, graph ML, computer vision, LLM fine-tuning, LLM/agent red-teaming, and agent/RAG benchmark eval, all as installable extras of one package. `core` is the thin shared substrate (data-tier conventions, OTel GenAI telemetry helpers, license-isolation policy, shared sandbox executor) used by every other dscraft subpackage."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "DSCraft" }]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3 :: Only",
+]
+
+dependencies = [
+    "opentelemetry-api>=1.20.0",
+]
+
+[project.optional-dependencies]
+# Per-subpackage extras. Installing the base package (`pip install dscraft`)
+# pulls in only `core` (opentelemetry-api, near-zero deps, see dependencies
+# above) -- every subpackage's own dependency universe is opt-in via these
+# extras, matching this repo's original per-module packaging split
+# (packages/automl, packages/lazyclean, etc.) now expressed as extras of one
+# installable package instead of nine separately-installed ones.
+
+# Module 1 (AutoML): numpy/pandas/scikit-learn are needed unconditionally
+# for the automl subpackage itself to function.
+automl = [
+    "numpy>=1.24",
+    "pandas>=2.0",
+    "scikit-learn>=1.3",
+]
+# AutoML's `.compile()` ONNX export path only -- skl2onnx/onnx/onnxruntime
+# are lazily imported inside dscraft.automl.compile (see
+# `_import_onnx_stack()` and the `TYPE_CHECKING`-only imports there), never
+# at module level, so plain `dscraft[automl]` does not need to force-install
+# them. Named `automl-onnx` (rather than folding into `automl`, or reusing
+# the original standalone automl package's extra name `onnx`) to keep the
+# extra name unambiguous now that "onnx" is also a real dependency shared
+# with `clean` and `vision` below.
+automl-onnx = [
+    "skl2onnx>=1.16",
+    "onnx>=1.15",
+    "onnxruntime>=1.17",
+]
+# Module 2 (LazyClean): ONNX Runtime (PyTorch-free, by hard architectural
+# constraint -- never add torch/transformers here) text embeddings, plus
+# `datasketch` for contamination.py's MinHash signature generation (stage-1
+# LSHBloom candidate screening -- see that module's docstring for exactly
+# which datasketch.MinHash members are used).
+clean = [
+    "onnxruntime>=1.17",
+    "onnx>=1.15",
+    "numpy>=1.24",
+    "datasketch>=1.6",
+]
+# Module 3 (LazyForecast): classical statistical forecasting core.
+# statsmodels is test-only (see test_real_dataset_validation.py -- it
+# supplies real, bundled, offline time-series datasets (co2, nile) used to
+# validate forecast()/backtest() against real data, not used by any
+# runtime code path here), but it lives in this extra rather than the base
+# `dev` extra specifically because statsmodels transitively requires scipy
+# (`pip show statsmodels` -> Requires: numpy, packaging, pandas, patsy,
+# scipy), and scipy is itself a `graph`-subpackage-specific dependency (see
+# the `graph` extra below). Putting statsmodels in the base `dev` extra
+# would silently force scipy onto every environment, including a bare
+# `dscraft[dev]` install that never touches `graph` -- violating this
+# package's "no environment ever forced to install one subpackage's stack
+# via the base install" design intent. Placing it here instead means only
+# `dscraft[forecast,dev]` (the combination forecast's own tests actually
+# require, and the combination the `forecast` CI matrix job already
+# installs) pulls in statsmodels/scipy.
+forecast = [
+    "numpy>=1.24",
+    "pandas>=2.0",
+    "statsforecast>=1.7",
+    "statsmodels>=0.14",
+]
+# Module 4 (LazyGraph): sparse graph tensor adapter + MPNNs -- torch and
+# torch_geometric are unavoidable core deps of this subpackage's one
+# signature capability, not optional add-ons.
+graph = [
+    "numpy>=1.24",
+    "scipy>=1.11",
+    "torch>=2.2",
+    "torch_geometric>=2.5",
+]
+# Module 5 (LazyVision): dense image pipeline + CNN/ViT export via
+# torch.export -> ONNX. onnxscript is a hard runtime dependency of
+# `torch.onnx.export(..., dynamo=True)`, not an incidental extra.
+vision = [
+    "numpy>=1.24",
+    "pillow>=10.0",
+    "torch>=2.5",
+    "onnx>=1.15",
+    "onnxruntime>=1.17",
+    "onnxscript>=0.1.0",
+]
+# Module 6 (LazyTune): local LLM fine-tuning (LoRA via peft/transformers).
+tune = [
+    "torch>=2.1",
+    "transformers>=4.40",
+    "peft>=0.10",
+]
+# Module 7 (LazyRed, now `security`): stdlib + core only -- no extra heavy
+# deps beyond the base package itself.
+security = []
+# Module 8 (LazyAgent, now `agent`): stdlib + core only, same as `security`
+# -- both rely on the shared `dscraft.core.sandbox` executor rather than any
+# subpackage-specific dependency.
+agent = []
+# Module 10 (LazyEDA, now `eda`): lazy Polars profiling (engine.py) +
+# Apache DataSketches HLL/KLL sketches (sketches.py) + a SciPy-based
+# association-matrix suite (associations.py) + a dependency-free HTML/
+# Canvas report renderer (report.py). `datasketches` is a hard runtime
+# dependency here (not a further-nested optional extra) -- see
+# sketches.py's module docstring for why HLL/KLL cardinality/quantile
+# estimation *is* this subpackage's signature scalable-profiling
+# capability, not an optional add-on bolted onto something with other
+# things to do without it. `polars` is pinned to the same floor as the
+# `dev` extra's own polars pin below (both need Polars' lazy-execution
+# API; keeping the two floors in sync avoids two different minimum
+# versions of the same library across extras of one package). `scipy` is
+# needed directly by associations.py's Cramer's V / correlation-ratio /
+# continuous-correlation implementations (`scipy.stats`,
+# `scipy.stats.contingency`) -- report.py and engine.py need neither
+# numpy nor scipy beyond what polars/datasketches already pull in.
+#
+# DuckDB was originally floated (per the architecture doc's EDA research)
+# as a second lazy-execution engine alongside Polars, but is deliberately
+# NOT added here: engine.py's actual implementation covers every lazy
+# execution need (schema resolution, null-counting, row-count) with
+# Polars' own lazy API alone (`pl.scan_parquet`/`pl.scan_csv` +
+# `.collect_schema()`/`.select(...).collect()`), and nothing built in
+# sketches.py/associations.py/report.py/this wiring module needs SQL
+# execution or a second query engine. Adding `duckdb` here now would be
+# an unused dependency with no code path exercising it -- if a genuine
+# DuckDB-specific need (e.g. SQL-expression-based profiling) emerges
+# later, add it as its own opt-in extra at that point rather than
+# reflexively now.
+eda = [
+    "polars>=0.20",
+    "datasketches>=5.0",
+    "scipy>=1.11",
+]
+
+# Union of every module extra above (excluding dev) -- installs everything
+# needed to run all ten subpackages' runtime code paths, including
+# AutoML's optional ONNX export path.
+all = [
+    "numpy>=1.24",
+    "pandas>=2.0",
+    "scikit-learn>=1.3",
+    "skl2onnx>=1.16",
+    "onnx>=1.15",
+    "onnxruntime>=1.17",
+    "datasketch>=1.6",
+    "statsforecast>=1.7",
+    "statsmodels>=0.14",
+    "scipy>=1.11",
+    "torch>=2.5",
+    "torch_geometric>=2.5",
+    "pillow>=10.0",
+    "onnxscript>=0.1.0",
+    "transformers>=4.40",
+    "peft>=0.10",
+    "polars>=0.20",
+    "datasketches>=5.0",
+]
+
+dev = [
+    "pytest>=7.0",
+    # Test-only additions (CodeRabbit finding, carried over from
+    # dscraft.core): dscraft.core.data's Tier-1 helpers exercise
+    # pandas/polars, and pandas' pyarrow dtype backend additionally needs
+    # pyarrow installed. Without these in the `dev` extra, `pip install -e
+    # ".[dev]"` followed by `pytest` silently skips every Tier-1 test via
+    # `pytest.importorskip` in test_data.py -- the documented test command
+    # never actually exercises that tier. dscraft.core's own runtime code
+    # (dscraft/core/data.py) still never hard-depends on any of these -- it
+    # imports them lazily, only when a caller actually invokes a Tier-1
+    # helper -- so this does not weaken dscraft.core's "near-zero
+    # dependencies" runtime contract; it only adds to the test-time
+    # dependency set.
+    "pandas>=2.0",
+    "polars>=0.20",
+    "pyarrow>=14.0",
+]
+# Deliberately NOT added to `dev` above: statsmodels. It's forecast's
+# test-only dependency (see test_real_dataset_validation.py -- real,
+# bundled, offline time-series datasets (co2, nile) used to validate
+# forecast()/backtest() against real data, not used by any subpackage's
+# runtime logic), but unlike the pandas/polars/pyarrow trio above it is NOT
+# safe to add to the base `dev` extra: statsmodels transitively requires
+# scipy (`pip show statsmodels` -> Requires: numpy, packaging, pandas,
+# patsy, scipy), and scipy is itself a `graph`-subpackage-specific
+# dependency (see the `graph` extra above), not a universal dev dependency.
+# Adding statsmodels to the base `dev` extra would silently force scipy
+# onto every environment via a bare `dscraft[dev]` install, breaking this
+# package's "no environment ever forced to install one subpackage's stack
+# via the base install" design intent. It lives in the `forecast` extra
+# instead (see above) -- `dscraft[forecast,dev]` (the combination
+# forecast's own tests require, and the combination the `forecast` CI
+# matrix job already installs) is the supported way to get it.
+# Deliberately NOT added to `dev` above either: scikit-learn. It's needed to run
+# `dscraft.vision`'s test suite (sklearn.datasets.load_digits() supplies a
+# real, bundled, network-free image dataset for validating the decode ->
+# augment -> to_dense_tensor -> TinyCNN -> ONNX export path), but it is a
+# "heavy" dependency by this package's own definition (see the base-install
+# isolation check in the README/tests), so it must not be force-installed
+# by the base `dev` extra alone. It is already a real, unconditional
+# runtime dependency of the `automl` extra above, and therefore already
+# included in `all` below. `dscraft[dev]` alone (no module extra) is only
+# meant to run `dscraft.core`'s own test suite -- running `dscraft.vision`'s
+# tests at all requires the `vision` extra (for torch/onnx) regardless, so
+# `dscraft[all,dev]` (the full combined-suite install) is the supported way
+# to get scikit-learn alongside vision's other test dependencies; see the
+# README's "Local development" section for the isolated-vision-testing
+# workaround if `all` is more than you want.
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/dscraft"]

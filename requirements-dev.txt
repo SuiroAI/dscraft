@@ -1,18 +1,14 @@
-# Editable install of every Benchcraft package for local development.
-# lazycore must come first since every other package depends on it.
+# Editable install of the single DSCraft package for local development.
+# There is one installable package now (packages/dscraft); all ten
+# subpackages (core, automl, clean, forecast, graph, vision, tune,
+# security, agent, eda) live inside it and are pulled in via the `all`
+# extra.
 #
 # Usage: pip install -r requirements-dev.txt
 #
-# To pull in a package's optional extras (e.g. automl's ONNX export path),
-# install that package directly instead, e.g.:
-#   pip install -e "packages/automl[onnx,dev]"
+# To install just one subpackage's extras instead of everything (e.g. to
+# avoid pulling in torch for a forecast-only change), install the package
+# directly with a narrower extras list, e.g.:
+#   pip install -e "packages/dscraft[forecast,dev]"
 
--e packages/lazycore[dev]
--e packages/automl[dev]
--e packages/lazyclean[dev]
--e packages/lazyforecast[dev]
--e packages/lazygraph[dev]
--e packages/lazyvision[dev]
--e packages/lazytune[dev]
--e packages/lazyred[dev]
--e packages/lazyagent[dev]
+-e packages/dscraft[all,dev]

@@ -13,13 +13,13 @@ reviews:
   path_instructions:
     - path: "packages/*/src/**"
       instructions: >
-        This is production library code for an installable Benchcraft
+        This is production library code for the installable DSCraft
         package. Review strictly: flag missing/incorrect type hints,
         undocumented public functions/classes, silent exception
         swallowing, and any deviation from the licensing policy in
         CLAUDE.md (no GPL/AGPL runtime deps outside the documented
         subprocess-isolation pattern; no torch/transformers in
-        lazyclean; no torch-sparse/METIS in lazygraph). Per CLAUDE.md,
+        dscraft.clean; no torch-sparse/METIS in dscraft.graph). Per CLAUDE.md,
         also flag any new shared inter-module interface, router, or
         `BaseTarget`-style abstraction as out of scope -- those are
         explicitly deferred architecture decisions, not omissions.
@@ -35,14 +35,14 @@ reviews:
         Test code. Prioritize catching tests that don't actually assert
         anything, over-mocked tests that no longer exercise real
         behavior, and use of `pytest.importorskip` that would silently
-        skip an entire tier of coverage (see the lazycore `dev` extra
-        comment in packages/lazycore/pyproject.toml for the exact
+        skip an entire tier of coverage (see the `dscraft.core` `dev`
+        extra comment in packages/dscraft/pyproject.toml for the exact
         failure mode this project already hit once).
     - path: "**"
       instructions: >
         Before finishing review of this PR, cross-reference the diff
         against the "Part 4: Cross-Cutting Decisions Reference Table"
-        in Benchcraft_Unified_Architecture.md (rows marked "Locked" or
+        in DSCraft_Unified_Architecture.md (rows marked "Locked" or
         "Locked (excluded)"). Flag, as a scope-alignment concern
         distinct from ordinary code-quality comments, any change that:
         (1) introduces a shared LLM router, multi-provider abstraction,
@@ -50,8 +50,9 @@ reviews:
         formal typed inter-module data contract/manifest (MLflow
         "flavors"-style) before two real modules exchange data through
         it; (3) adds module-specific business logic to
-        `packages/lazycore/` instead of keeping it limited to the
-        shared data-tier/OTel/license/sandbox conventions in Part 2;
+        `packages/dscraft/src/dscraft/core/` instead of keeping it
+        limited to the shared data-tier/OTel/license/sandbox conventions
+        in Part 2;
         (4) adds a cloud/remote-serving deployment path, remote
         inference endpoint, or a red-teaming/agent-eval target that
         isn't local; or (5) implements any part of LazyEdge (edge/
@@ -93,7 +94,7 @@ reviews:
     # instead of skipping. The custom_checks entries below are the
     # complementary mechanism that works today, without issues: they
     # check the diff against the locked decisions written directly into
-    # Benchcraft_Unified_Architecture.md, rather than against a
+    # DSCraft_Unified_Architecture.md, rather than against a
     # per-PR issue description.
     #
     # Custom check: nothing in CodeRabbit's schema can literally run
@@ -118,7 +119,7 @@ reviews:
           test change.
       # Second, independent custom check: architectural scope alignment
       # against the locked v1 decisions in
-      # Benchcraft_Unified_Architecture.md Part 4. This approximates
+      # DSCraft_Unified_Architecture.md Part 4. This approximates
       # "does this PR match the project's purpose" as five concrete,
       # diff-checkable yes/no conditions -- CodeRabbit cannot judge
       # holistic "purpose" alignment, but it can check for these
@@ -127,7 +128,7 @@ reviews:
       - name: "No scope-locked architecture violations"
         mode: warning
         instructions: >
-          Read Benchcraft_Unified_Architecture.md Part 4 (Cross-Cutting
+          Read DSCraft_Unified_Architecture.md Part 4 (Cross-Cutting
           Decisions Reference Table) if present in the repo. Fail this
           check, quoting the specific rows violated, if the PR diff
           does any of the following: (1) adds a shared LLM router,
@@ -136,14 +137,15 @@ reviews:
           one module -- each module must take a bare "bring your own
           local model handle" approach instead; (2) adds a new formal,
           typed inter-module data contract, shared manifest schema, or
-          MLflow-"flavors"-style interface between two Benchcraft
+          MLflow-"flavors"-style interface between two DSCraft
           modules -- this is deferred until at least two real modules
           need to exchange data, not something to build preemptively;
-          (3) adds code under packages/lazycore/ that implements logic
-          specific to one non-lazycore module (e.g. AutoML-only,
-          LazyVision-only, or LazyRed-only behavior) rather than a
-          shared data-tier/OTel-schema/license-policy/sandbox-executor
-          convention documented in Part 2 -- lazycore must stay thin;
+          (3) adds code under packages/dscraft/src/dscraft/core/ that
+          implements logic specific to one non-`core` subpackage (e.g.
+          AutoML-only, LazyVision-only, or LazyRed-only behavior) rather
+          than a shared data-tier/OTel-schema/license-policy/sandbox-
+          executor convention documented in Part 2 -- `dscraft.core`
+          must stay thin;
           (4) adds a cloud deployment target, a remote/hosted inference
           endpoint, or a non-local execution path for any module,
           including for LazyRed/LazyAgent red-teaming or agent-eval
@@ -153,7 +155,7 @@ reviews:
           (edge/microcontroller compilation) -- LazyEdge is fully
           deferred, roadmap-only, and not to be built. Pass if none of
           these five conditions apply to the diff. If
-          Benchcraft_Unified_Architecture.md is not present in the
+          DSCraft_Unified_Architecture.md is not present in the
           diff or repo context, state that explicitly and pass with a
           note rather than failing blind.
 
@@ -198,7 +200,7 @@ code_generation:
 # CLAUDE.md as "learnings" in review comments today. Setting filePatterns
 # explicitly here does two things: (1) keeps CLAUDE.md as an explicit
 # review-criteria source rather than relying on undocumented-in-repo
-# auto-detection, and (2) adds Benchcraft_Unified_Architecture.md as an
+# auto-detection, and (2) adds DSCraft_Unified_Architecture.md as an
 # explicit knowledge source too -- CodeRabbit's default auto-detected
 # filename list does not include it, so without this it would only be
 # reachable via the path_instructions/custom_checks text above asking
@@ -210,7 +212,7 @@ knowledge_base:
     enabled: true
     filePatterns:
       - "**/CLAUDE.md"
-      - "Benchcraft_Unified_Architecture.md"
+      - "DSCraft_Unified_Architecture.md"
 
 chat:
   auto_reply: true
@@ -250,6 +252,6 @@ chat:
 #   (enabled: true, auto-detecting convention files like CLAUDE.md),
 #   which explained the "Based on learnings" reference CodeRabbit
 #   produced during earlier reviews. Now set explicitly above (still
-#   enabled: true) to add Benchcraft_Unified_Architecture.md as an
+#   enabled: true) to add DSCraft_Unified_Architecture.md as an
 #   additional knowledge source for architecture-scope-alignment
 #   review, alongside CLAUDE.md rather than instead of it.
