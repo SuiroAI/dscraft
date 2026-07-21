@@ -111,6 +111,11 @@ from dscraft.eda.engine import (
     SchemaReport,
     profile_engine,
 )
+from dscraft.eda.plots import (
+    PlotnineExtraNotInstalledError,
+    association_heatmap,
+    column_distribution,
+)
 from dscraft.eda.report import (
     AssociationMatrix,
     ColumnSummary,
@@ -125,7 +130,13 @@ from dscraft.eda.sketches import (
     estimate_quantiles,
 )
 
-__all__ = ["LazyEDA", "EDAProfile"]
+__all__ = [
+    "EDAProfile",
+    "LazyEDA",
+    "PlotnineExtraNotInstalledError",
+    "association_heatmap",
+    "column_distribution",
+]
 
 #: Default quantiles requested per numeric column: min, p25, median, p75,
 #: max. Matches the label mapping in :data:`_QUANTILE_LABELS` below.

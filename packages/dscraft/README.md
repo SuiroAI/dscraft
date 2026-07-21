@@ -283,6 +283,28 @@ result objects. Outlier/anomaly detection and time-series-specific EDA
 scope for this pass — see `DSCraft_Unified_Architecture.md`'s LazyEDA
 module entry for what's deferred. Install via the `eda` extra.
 
+For publication-quality, static, layered exploratory plots (as an
+alternative to — not a replacement for — the interactive single-file HTML
+report above), `dscraft.eda.plots` exposes `association_heatmap` and
+`column_distribution`, which turn an `AssociationMatrixResult` or a
+`ColumnSummary` you already have (e.g. from `profile.association_matrix`
+or `profile.report_data.column_summaries`) into a `plotnine.ggplot`
+object you can further customize and `.save(path)` yourself:
+
+```python
+from dscraft.eda import LazyEDA, association_heatmap, column_distribution
+
+profile = LazyEDA().profile("orders.parquet")
+association_heatmap(profile.association_matrix).save("associations.png")
+
+summaries = {s.name: s for s in profile.report_data.column_summaries}
+column_distribution(summaries["amount"]).save("amount_distribution.png")
+```
+
+This is an optional, separately-gated capability: install the `eda-plotnine`
+extra (`pip install "dscraft[eda,eda-plotnine]"`) to use it — the base `eda`
+extra alone does not pull in `plotnine`/matplotlib.
+
 ## Further reading
 
 See `DSCraft_Unified_Architecture.md` at the repo root for the full

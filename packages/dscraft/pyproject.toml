@@ -201,10 +201,27 @@ eda = [
     "datasketches>=5.0",
     "scipy>=1.11",
 ]
+# `eda`'s optional plotnine-backed grammar-of-graphics plotting path only
+# (dscraft/eda/plots.py) -- plotnine pulls in matplotlib (and pandas) on
+# top of everything the base `eda` extra above already needs, and neither
+# is required by `LazyEDA`'s core profiling/HTML-report capability.
+# plotnine is lazily imported inside dscraft.eda.plots (see
+# `_require_plotnine()`, mirroring `dscraft.automl.compile`'s
+# `_require_onnx_stack()` lazy-import discipline for its own optional
+# `automl-onnx` extra), never at module level, so plain `dscraft[eda]`
+# does not need to force-install it. Named `eda-plotnine` (rather than
+# folding into `eda`, or a more generic `eda-plots`) to match the existing
+# `automl`/`automl-onnx` split-extra naming precedent above -- the suffix
+# names the specific optional library/backend being added, not just "some
+# more plotting."
+eda-plotnine = [
+    "plotnine>=0.13",
+]
 
 # Union of every module extra above (excluding dev) -- installs everything
 # needed to run all ten subpackages' runtime code paths, including
-# AutoML's optional ONNX export path.
+# AutoML's optional ONNX export path and eda's optional plotnine plotting
+# path.
 all = [
     "numpy>=1.24",
     "pandas>=2.0",
@@ -230,6 +247,7 @@ all = [
     "peft>=0.10",
     "polars>=0.20",
     "datasketches>=5.0",
+    "plotnine>=0.13",
 ]
 
 dev = [
