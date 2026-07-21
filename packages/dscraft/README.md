@@ -329,6 +329,35 @@ This is an optional, separately-gated capability: install the `eda-plotnine`
 extra (`pip install "dscraft[eda,eda-plotnine]"`) to use it — the base `eda`
 extra alone does not pull in `plotnine`/matplotlib.
 
+## Examples
+
+Every subpackage's `packages/dscraft/examples/<subpackage>/` directory has
+a plain runnable `.py` script plus a `quickstart.ipynb` Jupyter notebook
+covering the same end-to-end scenario in cell-by-cell, explorable form —
+both import the real installed package rather than reimplementing any
+logic inline. Each notebook is scoped to install and run inside its own
+subpackage's extra only (e.g. `pip install -e "packages/dscraft[forecast,dev]"
+nbconvert ipykernel` for `forecast/quickstart.ipynb`), matching this
+package's per-subpackage extras design rather than one shared environment
+with every extra installed at once:
+
+| Subpackage | Notebook |
+|---|---|
+| `dscraft.automl` | [`examples/automl/quickstart.ipynb`](examples/automl/quickstart.ipynb) |
+| `dscraft.clean` | [`examples/clean/quickstart.ipynb`](examples/clean/quickstart.ipynb) |
+| `dscraft.forecast` | [`examples/forecast/quickstart.ipynb`](examples/forecast/quickstart.ipynb) |
+| `dscraft.graph` | [`examples/graph/quickstart.ipynb`](examples/graph/quickstart.ipynb) |
+| `dscraft.vision` | [`examples/vision/quickstart.ipynb`](examples/vision/quickstart.ipynb) |
+| `dscraft.tune` | [`examples/tune/quickstart.ipynb`](examples/tune/quickstart.ipynb) |
+| `dscraft.security` | [`examples/security/quickstart.ipynb`](examples/security/quickstart.ipynb) |
+| `dscraft.agent` | [`examples/agent/quickstart.ipynb`](examples/agent/quickstart.ipynb) |
+| `dscraft.eda` | [`examples/eda/quickstart.ipynb`](examples/eda/quickstart.ipynb) |
+
+These notebooks are not currently executed by CI (the existing
+`examples-syntax` job only `py_compile`s the `.py` scripts) — that's a
+conscious, documented gap here, not an oversight; adding an
+`nbconvert --execute` smoke-test job is a separate follow-up.
+
 ## Further reading
 
 See `DSCraft_Unified_Architecture.md` at the repo root for the full
