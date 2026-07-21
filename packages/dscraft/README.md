@@ -179,7 +179,16 @@ the adapter directly. Install via the `graph` extra.
 `dscraft.core.data.DenseMediaPipeline` (decode via Pillow → augment
 resize/flip → dense `torch.Tensor`, DLPack-ready). `TinyCNN` is a small
 LeNet-style classifier captured via `torch.export()` and exported to ONNX,
-proving the export path end-to-end. Install via the `vision` extra.
+proving the export path end-to-end. `run_ocr(image, backend=...)` adds OCR
+as a second, independent capability with a selectable backend — `"easyocr"`
+(PyTorch-based, MPS/GPU-capable, no external binary) or `"tesseract"` (via
+`pytesseract`, CPU-only, requires the separate system `tesseract` binary —
+e.g. `brew install tesseract` on macOS) — per the multi-backend design
+principle, neither is hard-coded as the only option. Both return a
+comparably-shaped `OCRResult` (text plus per-detection bounding
+boxes/confidence). Install via the `vision` extra (both OCR backends'
+pip packages ship with it; the `tesseract` backend additionally needs the
+system binary installed separately).
 
 ## `dscraft.tune`
 

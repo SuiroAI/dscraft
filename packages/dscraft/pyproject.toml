@@ -93,13 +93,47 @@ graph = [
 # Module 5 (LazyVision): dense image pipeline + CNN/ViT export via
 # torch.export -> ONNX. onnxscript is a hard runtime dependency of
 # `torch.onnx.export(..., dynamo=True)`, not an incidental extra.
+#
+# OCR (issue #11): `easyocr` and `pytesseract` are both included directly
+# in this same `vision` extra (not a separate `vision-ocr` extra, despite
+# the issue's initial proposal of one -- resolved at design time, per the
+# issue's own "confirm this at design time rather than assuming" note).
+# `easyocr` pulls in `torch`/`torchvision` transitively, and `vision`
+# already unconditionally requires `torch>=2.5` above, so folding it into
+# this extra adds no new dependency-stack conflict class. `pytesseract` is
+# a thin, tiny pure-Python wrapper with no heavy transitive deps of its own
+# (it shells out to a *separate*, non-pip system binary at call time -- see
+# below), so it does not meaningfully add to `vision`'s footprint either.
+# Per the multi-backend design principle, both OCR backends ship together
+# so `dscraft.vision.run_ocr(..., backend=...)` always has both options
+# available rather than requiring a second `pip install` step to unlock
+# backend choice.
+#
+# IMPORTANT: `pytesseract` is a pure Python wrapper around the *system*
+# `tesseract` binary -- that binary itself is NOT a pip package and cannot
+# be declared here. Installing this `vision` extra installs `pytesseract`
+# but NOT `tesseract` itself; the `tesseract` backend additionally requires
+# a separate, manual install of the system binary (e.g. `brew install
+# tesseract` on macOS, `apt-get install tesseract-ocr` on Debian/Ubuntu).
+# `dscraft.vision.ocr._run_tesseract` detects the binary's absence up front
+# (`shutil.which("tesseract")`) and raises a clear, actionable error rather
+# than an opaque traceback if it's missing -- see that module's docstring.
+#
+# `pillow` floor raised from >=10.0 to >=10.1 for `ImageFont.load_default
+# (size=...)` support (added in Pillow 10.1), used by `test_ocr.py`'s
+# synthetic-text-image fallback path when no TrueType font is discoverable
+# on the machine running the tests -- Pillow's pre-10.1 default bitmap font
+# has no `size` parameter and renders too small for either OCR backend to
+# reliably recognize.
 vision = [
     "numpy>=1.24",
-    "pillow>=10.0",
+    "pillow>=10.1",
     "torch>=2.5",
     "onnx>=1.15",
     "onnxruntime>=1.17",
     "onnxscript>=0.1.0",
+    "easyocr>=1.7",
+    "pytesseract>=0.3.10",
 ]
 # Module 6 (LazyTune): local LLM fine-tuning (LoRA via peft/transformers).
 tune = [
@@ -165,8 +199,10 @@ all = [
     "scipy>=1.11",
     "torch>=2.5",
     "torch_geometric>=2.5",
-    "pillow>=10.0",
+    "pillow>=10.1",
     "onnxscript>=0.1.0",
+    "easyocr>=1.7",
+    "pytesseract>=0.3.10",
     "transformers>=4.40",
     "peft>=0.10",
     "polars>=0.20",
