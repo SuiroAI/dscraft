@@ -35,7 +35,7 @@ and the module dependency graph.
 
 ## 2. Branch protection on `main`
 
-`main` is protected. Verified via `gh api repos/gr3enarr0w/benchcraft/branches/main/protection`:
+`main` is protected. Verified via `gh api repos/gr3enarr0w/dscraft/branches/main/protection`:
 
 - **No direct pushes.** All changes must go through a pull request.
 - **1 approving review required** (`required_approving_review_count: 1`).
