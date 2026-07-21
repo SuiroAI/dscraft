@@ -29,11 +29,30 @@ dependencies = [
 # installable package instead of nine separately-installed ones.
 
 # Module 1 (AutoML): numpy/pandas/scikit-learn are needed unconditionally
-# for the automl subpackage itself to function.
+# for the automl subpackage itself to function. xgboost/lightgbm/catboost
+# (dscraft.automl.models -- pluggable gradient-boosted-tree backends, per
+# the multi-backend design principle: all three exposed as equally-
+# supported, caller-selectable options, never one picked as "the" default)
+# are base runtime deps of this extra too, imported at module level in
+# models.py the same way compile.py imports sklearn directly -- all three
+# are Tier-1/MIT-compatible (XGBoost: Apache-2.0, LightGBM: MIT, CatBoost:
+# Apache-2.0) and were verified to install cleanly from PyPI wheels on
+# Apple Silicon (arm64 macOS) with no known wheel-availability problems for
+# any of the three at the time this extra was added. HDBSCAN clustering
+# (dscraft.automl.clustering) needs no new dependency -- it wraps
+# scikit-learn's own built-in `sklearn.cluster.HDBSCAN`, present since
+# scikit-learn 1.3 (already this extra's floor). `imbalanced-learn`
+# (dscraft.automl.resampling -- MIT, Tier 1) is also a base runtime dep of
+# this extra, exposing RandomOverSampler/SMOTE/RandomUnderSampler as
+# equally-supported resampling strategies.
 automl = [
     "numpy>=1.24",
     "pandas>=2.0",
     "scikit-learn>=1.3",
+    "xgboost>=2.0",
+    "lightgbm>=4.0",
+    "catboost>=1.2",
+    "imbalanced-learn>=0.12",
 ]
 # AutoML's `.compile()` ONNX export path only -- skl2onnx/onnx/onnxruntime
 # are lazily imported inside dscraft.automl.compile (see
@@ -190,6 +209,10 @@ all = [
     "numpy>=1.24",
     "pandas>=2.0",
     "scikit-learn>=1.3",
+    "xgboost>=2.0",
+    "lightgbm>=4.0",
+    "catboost>=1.2",
+    "imbalanced-learn>=0.12",
     "skl2onnx>=1.16",
     "onnx>=1.15",
     "onnxruntime>=1.17",

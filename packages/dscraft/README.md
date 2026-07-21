@@ -110,6 +110,29 @@ scikit-learn install required at serving time. Base runtime deps
 `skl2onnx`/`onnx`/`onnxruntime` (needed only for `.compile()` itself, and
 lazily imported) install via the separate `automl-onnx` extra.
 
+`dscraft.automl.build_model(name, task, **kwargs)` builds an unfitted,
+sklearn-compatible gradient-boosted-tree estimator from a caller-selected
+backend -- XGBoost, LightGBM, or CatBoost, all three equally supported per
+this project's multi-backend design principle (none is a "default").
+`SUPPORTED_CLASSIFIERS`/`SUPPORTED_REGRESSORS` are the name -> class
+allowlists `build_model` dispatches through, mirroring
+`dscraft.forecast`'s `SUPPORTED_MODELS` pattern. All three libraries are
+base runtime deps of the `automl` extra (not a separate extra).
+
+`dscraft.automl.build_clusterer(name, **kwargs)` builds an unfitted,
+sklearn-compatible clustering estimator -- currently HDBSCAN, via
+scikit-learn's own built-in `sklearn.cluster.HDBSCAN` (no new dependency
+needed), exposed through `SUPPORTED_CLUSTERERS`. This is an independent,
+unsupervised capability -- it does not require the supervised model
+allowlist above.
+
+`dscraft.automl.build_resampler(name, **kwargs)` builds an unfitted
+`imbalanced-learn` resampler -- `RandomOverSampler`, `SMOTE`, or
+`RandomUnderSampler`, exposed through `SUPPORTED_RESAMPLERS` -- for
+rebalancing a skewed classification training set ahead of the classifier
+path above. `imbalanced-learn` is a base runtime dep of the `automl`
+extra.
+
 ## `dscraft.clean`
 
 A data-quality firewall for a training DataFrame. The primary entrypoint is
