@@ -45,8 +45,11 @@ Public entrypoints, in the order a caller would typically use them:
 1. :func:`compute_group_class_thresholds` -- per-(group, class) thresholds.
 2. :func:`build_group_confident_joints` -- per-group confident-joint
    matrices ``Q_g``.
-3. :func:`prune_by_noise_rate` / :func:`prune_by_class` -- two pruning
-   strategies over the confident joints, each returning a boolean mask.
+3. :func:`prune_by_noise_rate` / :func:`prune_by_class` / :func:`prune_by_both`
+   -- pruning strategies over the confident joints, each returning a
+   boolean mask. ``prune_by_both`` is a thin composition of the first two
+   (their intersection), mirroring cleanlab's ``find_label_issues(filter_by=
+   "both")`` mode -- see its own docstring below.
 4. :func:`detect_label_errors` -- the one-call convenience entrypoint that
    composes 1-3, matching this package's "one clear entrypoint" pattern
    (see ``dscraft.clean.detect_near_duplicate_text`` for the analogous
@@ -76,6 +79,7 @@ __all__ = [
     "build_group_confident_joints",
     "prune_by_noise_rate",
     "prune_by_class",
+    "prune_by_both",
     "detect_label_errors",
 ]
 
@@ -636,6 +640,53 @@ def prune_by_class(
     return mask
 
 
+def prune_by_both(
+    joints: Sequence[GroupConfidentJoint],
+    n_samples: int,
+    *,
+    frac: float = 0.05,
+    n: int | None = None,
+) -> np.ndarray:
+    """Flag examples that both :func:`prune_by_noise_rate` and :func:`prune_by_class` would flag.
+
+    This is the group-conditioned analogue of cleanlab's
+    ``find_label_issues(filter_by="both")`` mode: run both pruning
+    strategies independently (each with the same ``frac``/``n`` budget) and
+    intersect their flagged sets, rather than introducing a new ranking
+    criterion of its own. Intersecting two independently-derived signals --
+    "confidently mislabeled relative to another class" (noise rate) and
+    "anomalously low own-label confidence for this group/class" (class) --
+    is a stricter, higher-precision/lower-recall criterion than either
+    strategy alone: an example must look suspicious by both measures to be
+    flagged here, at the cost of missing examples either strategy alone
+    would have caught but the other wouldn't.
+
+    This is intentionally just a two-line composition of the existing
+    :func:`prune_by_noise_rate` and :func:`prune_by_class` functions -- no
+    new confident-joint or thresholding logic is introduced.
+
+    Args:
+        joints: per-group confident joints from
+            :func:`build_group_confident_joints`.
+        n_samples: total number of examples in the original dataset.
+        frac: fraction of ``n_samples`` requested from *each* underlying
+            strategy (see :func:`prune_by_noise_rate`/:func:`prune_by_class`)
+            before intersecting; the intersection itself may end up smaller
+            than ``frac * n_samples``, since it only keeps examples both
+            strategies independently selected.
+        n: exact number of examples requested from *each* underlying
+            strategy; takes precedence over ``frac`` when given, same as in
+            :func:`prune_by_noise_rate`/:func:`prune_by_class`.
+
+    Returns:
+        A boolean mask of shape ``(n_samples,)``; ``True`` marks an example
+        flagged by both underlying strategies.
+    """
+    noise_rate_mask = prune_by_noise_rate(joints, n_samples, frac=frac, n=n)
+    class_mask = prune_by_class(joints, n_samples, frac=frac, n=n)
+    return noise_rate_mask & class_mask
+
+
 # ---------------------------------------------------------------------------
 # Step 4: one-call convenience entrypoint
 # ---------------------------------------------------------------------------
@@ -653,9 +704,10 @@ def detect_label_errors(
     """DeCoLe end-to-end: compute per-group thresholds and confident joints, then prune.
 
     Composes :func:`compute_group_class_thresholds` ->
-    :func:`build_group_confident_joints` -> (:func:`prune_by_noise_rate` or
-    :func:`prune_by_class`, selected by ``strategy``) into one call, matching
-    this package's "one clear entrypoint" pattern (see
+    :func:`build_group_confident_joints` -> (:func:`prune_by_noise_rate`,
+    :func:`prune_by_class`, or :func:`prune_by_both`, selected by
+    ``strategy``) into one call, matching this package's "one clear
+    entrypoint" pattern (see
     ``dscraft.clean.detect_near_duplicate_text`` in ``dedup.py``/
     ``embeddings.py`` for the analogous convenience wrapper).
 
@@ -666,9 +718,11 @@ def detect_label_errors(
             probabilities; each row must be finite and sum to ~1.0.
         groups: 1D array-like of group/demographic attribute values, same
             length as ``labels``/``probs``.
-        strategy: ``"noise_rate"`` (default, see :func:`prune_by_noise_rate`)
-            or ``"class"`` (see :func:`prune_by_class`). Any other value
-            raises ``ValueError``.
+        strategy: ``"noise_rate"`` (default, see :func:`prune_by_noise_rate`),
+            ``"class"`` (see :func:`prune_by_class`), or ``"both"`` (see
+            :func:`prune_by_both` -- the intersection of the other two,
+            mirroring cleanlab's ``find_label_issues(filter_by="both")``).
+            Any other value raises ``ValueError``.
         frac: fraction of examples to flag when ``n`` is not given.
         n: exact number of examples to flag; takes precedence over ``frac``.
 
@@ -676,8 +730,8 @@ def detect_label_errors(
         A boolean mask of shape ``(n_samples,)``; ``True`` marks a flagged
         (likely-mislabeled) example.
     """
-    if strategy not in ("noise_rate", "class"):
-        raise ValueError(f"strategy must be 'noise_rate' or 'class', got {strategy!r}.")
+    if strategy not in ("noise_rate", "class", "both"):
+        raise ValueError(f"strategy must be 'noise_rate', 'class', or 'both', got {strategy!r}.")
 
     thresholds = compute_group_class_thresholds(labels, probs, groups)
     joints = build_group_confident_joints(labels, probs, groups, thresholds=thresholds)
@@ -685,4 +739,6 @@ def detect_label_errors(
 
     if strategy == "noise_rate":
         return prune_by_noise_rate(joints, n_samples, frac=frac, n=n)
-    return prune_by_class(joints, n_samples, frac=frac, n=n)
+    if strategy == "class":
+        return prune_by_class(joints, n_samples, frac=frac, n=n)
+    return prune_by_both(joints, n_samples, frac=frac, n=n)

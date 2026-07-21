@@ -20,6 +20,7 @@ from dscraft.clean.label_errors import (
     build_group_confident_joints,
     compute_group_class_thresholds,
     detect_label_errors,
+    prune_by_both,
     prune_by_class,
     prune_by_noise_rate,
 )
@@ -422,6 +423,55 @@ def test_n_takes_precedence_over_frac():
     assert mask.sum() == 1
 
 
+def test_prune_by_both_is_the_intersection_of_noise_rate_and_class():
+    """prune_by_both is a pure composition -- it must always equal the
+    element-wise AND of prune_by_noise_rate and prune_by_class run
+    independently with the same frac/n budget, mirroring cleanlab's
+    find_label_issues(filter_by="both")."""
+    labels, probs, groups = _noise_rate_fixture()
+    joints = build_group_confident_joints(labels, probs, groups)
+
+    noise_rate_mask = prune_by_noise_rate(joints, n_samples=10, frac=0.5)
+    class_mask = prune_by_class(joints, n_samples=10, frac=0.5)
+    both_mask = prune_by_both(joints, n_samples=10, frac=0.5)
+
+    assert both_mask.dtype == bool
+    np.testing.assert_array_equal(both_mask, noise_rate_mask & class_mask)
+    # The deliberately mislabeled example (index 9) is the strongest
+    # candidate under both strategies, so it must survive the intersection.
+    assert both_mask[9]
+
+
+def test_prune_by_both_can_be_empty_even_when_class_alone_flags_examples():
+    """When every observed label belongs to a single class, prune_by_noise_rate
+    can never find an off-diagonal confident-joint assignment (there is no
+    "other class" to be confidently reassigned to), so its mask is always
+    empty -- and intersecting with prune_by_class (which *does* flag
+    something here, see test_prune_by_class_flags_the_anomalously_low_confidence_example)
+    must therefore also be empty. This is the genuinely-stricter behavior
+    "both" is expected to have relative to either strategy alone."""
+    labels = np.array([0, 0, 0, 0, 0], dtype=int)
+    probs = _make_probs([0.90, 0.92, 0.88, 0.91, 0.30])
+    groups = np.array(["g"] * 5, dtype=object)
+    joints = build_group_confident_joints(labels, probs, groups)
+
+    class_mask = prune_by_class(joints, n_samples=5, frac=1.0)
+    assert class_mask.sum() == 5  # every example is eligible and flagged at frac=1.0
+
+    both_mask = prune_by_both(joints, n_samples=5, frac=1.0)
+    assert both_mask.sum() == 0
+
+
+def test_prune_by_both_rejects_invalid_frac_and_n():
+    labels, probs, groups = _noise_rate_fixture()
+    joints = build_group_confident_joints(labels, probs, groups)
+
+    with pytest.raises(ValueError):
+        prune_by_both(joints, n_samples=10, frac=1.5)
+    with pytest.raises(ValueError):
+        prune_by_both(joints, n_samples=10, n=-1)
+
+
 # ---------------------------------------------------------------------------
 # Step 4: detect_label_errors
 # ---------------------------------------------------------------------------
@@ -441,6 +491,15 @@ def test_detect_label_errors_class_strategy():
     mask = detect_label_errors(labels, probs, groups, strategy="class", n=1)
     assert mask.sum() == 1
     assert mask[4]
+
+
+def test_detect_label_errors_both_strategy():
+    labels, probs, groups = _noise_rate_fixture()
+    mask = detect_label_errors(labels, probs, groups, strategy="both", frac=0.5)
+    noise_rate_mask = detect_label_errors(labels, probs, groups, strategy="noise_rate", frac=0.5)
+    class_mask = detect_label_errors(labels, probs, groups, strategy="class", frac=0.5)
+    np.testing.assert_array_equal(mask, noise_rate_mask & class_mask)
+    assert mask[9]
 
 
 def test_detect_label_errors_rejects_unknown_strategy():

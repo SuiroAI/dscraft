@@ -22,6 +22,13 @@ Public API surface (architecture doc Part 3, "Module 2: LazyClean"):
   :class:`Sanitizer` docstring below for the exact composition and the
   ``"demographic-preserving"`` purge strategy's precise, documented
   interpretation.
+- :func:`detect_near_duplicate_images` -- the image-modality counterpart of
+  ``detect_near_duplicate_text``: embed a batch of already-decoded images
+  via native ONNX Runtime (no PyTorch, no CLIP-specific Python package),
+  then flag near-duplicate image pairs by reusing ``dedup.py``'s existing,
+  modality-agnostic near-duplicate scan. See ``image_dedup.py`` for the
+  full rationale (and ``docs/decisions/2026-07-image-dedup-evaluation.md``
+  for the evaluation that motivated it).
 
 The IVF-HNSW ANN index and spherical mini-batch k-means scale-out path for
 :func:`detect_near_duplicate_text` (see ``dedup.py``'s own module
@@ -56,6 +63,16 @@ from .embeddings import (
     download_recommended_model,
     hashing_bag_of_words_vectorizer,
 )
+from .image_dedup import (
+    RECOMMENDED_IMAGE_MODEL_NAME,
+    ImageEmbeddingModel,
+    ModelIntegrityError,
+    build_synthetic_image_embedding_model,
+    build_synthetic_image_embedding_onnx,
+    detect_near_duplicate_images,
+    download_recommended_clip_vision_model,
+    resize_and_normalize,
+)
 from .integrity import IntegrityReport, dataset_integrity_score
 from .label_errors import detect_label_errors
 
@@ -76,6 +93,14 @@ __all__ = [
     "cosine_similarity_matrix",
     "find_near_duplicates",
     "detect_near_duplicate_text",
+    "RECOMMENDED_IMAGE_MODEL_NAME",
+    "ImageEmbeddingModel",
+    "ModelIntegrityError",
+    "build_synthetic_image_embedding_model",
+    "build_synthetic_image_embedding_onnx",
+    "download_recommended_clip_vision_model",
+    "resize_and_normalize",
+    "detect_near_duplicate_images",
     "Sanitizer",
     "SanitizerReport",
 ]
