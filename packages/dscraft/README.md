@@ -29,15 +29,15 @@ what's here today and how to install/run it.
 | Subpackage | Extra | What it does |
 |---|---|---|
 | [`dscraft.core`](#dscraftcore) | *(base install)* | Shared substrate: three-tier data conventions, OTel GenAI telemetry helpers, license-isolation policy, shared sandbox executor. |
-| [`dscraft.automl`](#dscraftautoml) | `automl` (+ `automl-onnx`) | Clean-room tabular AutoML — `.compile()` fuses a fitted `sklearn.pipeline.Pipeline` into one portable ONNX graph via `skl2onnx`. |
-| [`dscraft.clean`](#dscraftclean) | `clean` | Data-quality firewall — ONNX Runtime (PyTorch-free) text embeddings feeding cosine-similarity near-duplicate detection. |
-| [`dscraft.forecast`](#dscraftforecast) | `forecast` | Classical statistical forecasting (the full Nixtla `statsforecast` classical catalog: AutoARIMA/AutoETS/AutoCES/AutoTheta autofits, simple baselines, Croston) over a Tier-1 Arrow-backed pipeline, plus a basic backtest report. |
+| [`dscraft.automl`](#dscraftautoml) | `automl` (+ `automl-onnx`) | Clean-room tabular AutoML — `.compile()` fuses a fitted `sklearn.pipeline.Pipeline` into one portable ONNX graph via `skl2onnx`; `build_model`/`build_clusterer`/`build_resampler` add selectable XGBoost/LightGBM/CatBoost, HDBSCAN, and imbalanced-learn backends. |
+| [`dscraft.clean`](#dscraftclean) | `clean` | Data-quality firewall — the composed `Sanitizer` entrypoint (DeCoLe label-error detection, train/test contamination auditing, Dataset Integrity Score), plus lower-level ONNX Runtime (PyTorch-free) text *and* image embeddings feeding cosine-similarity near-duplicate detection. |
+| [`dscraft.forecast`](#dscraftforecast) | `forecast` | Classical statistical forecasting (13 `statsforecast` models: AutoARIMA/AutoETS/AutoCES/AutoTheta autofits, simple baselines, Croston) over a Tier-1 Arrow-backed pipeline, `utilsforecast`-scored backtesting, and standalone STL/MSTL (+ Box-Cox) decomposition. |
 | [`dscraft.graph`](#dscraftgraph) | `graph` | Sparse graph ML — a concrete Tier-2 COO↔CSR/CSC tensor adapter (PyG↔SciPy) plus a minimal GCN forward pass. |
-| [`dscraft.vision`](#dscraftvision) | `vision` | Computer vision — a concrete Tier-3 dense image pipeline (decode→augment→tensor) plus a small CNN exported via `torch.export()`→ONNX. |
+| [`dscraft.vision`](#dscraftvision) | `vision` | Computer vision — a concrete Tier-3 dense image pipeline (decode→augment→tensor) plus a small CNN exported via `torch.export()`→ONNX, plus `run_ocr()` with selectable EasyOCR/Tesseract backends. |
 | [`dscraft.tune`](#dscrafttune) | `tune` | Local LLM fine-tuning — an Adapter-Factory `BaseTrainingAdapter` interface with a `ProgrammaticAdapter` doing real (tiny) LoRA fine-tuning via `peft`/`transformers`. |
 | [`dscraft.security`](#dscraftsecurity) | `security` | LLM red-teaming — a `BaseSecurityAdapter` running a real prompt-injection probe/detector loop against a local target inside the shared sandbox, OWASP-mapped findings. |
 | [`dscraft.agent`](#dscraftagent) | `agent` | Agent/benchmark eval — a bring-your-own-agent `AgentAdapter` executing file-manipulation tool-use tasks inside the shared sandbox, scored for pass rate and latency. |
-| [`dscraft.eda`](#dscrafteda) | `eda` | Exploratory data analysis — a lazy Polars profiling engine, HLL/KLL sketches, a mixed-type association matrix, and a self-contained HTML/Canvas report, composed behind one `LazyEDA` entry point. |
+| [`dscraft.eda`](#dscrafteda) | `eda` (+ `eda-plotnine`) | Exploratory data analysis — a lazy Polars profiling engine, HLL/KLL sketches, a mixed-type association matrix, and a self-contained HTML/Canvas report, composed behind one `LazyEDA` entry point; optional `plotnine`-based `association_heatmap`/`column_distribution` static plots via the separate `eda-plotnine` extra. |
 
 ## Installation
 
@@ -50,6 +50,9 @@ pip install "dscraft[forecast]"
 
 # AutoML's optional ONNX export path (on top of the `automl` extra)
 pip install "dscraft[automl,automl-onnx]"
+
+# EDA's optional plotnine static-plot path (on top of the `eda` extra)
+pip install "dscraft[eda,eda-plotnine]"
 
 # Everything (all nine subpackages' runtime deps)
 pip install "dscraft[all]"
@@ -142,7 +145,11 @@ into one audit-then-clean workflow:
 - **DeCoLe** (`label_errors.py`) — group-conditioned Confident Learning:
   per-(group, class) confidence thresholds instead of one global threshold,
   avoiding the standard confident-learning failure mode of over-pruning a
-  lower-confidence-but-correctly-labeled group's examples.
+  lower-confidence-but-correctly-labeled group's examples. Pruning supports
+  three selectable strategies mirroring cleanlab's `find_label_issues`
+  filter modes — `"noise_rate"` (default), `"class"`, and `"both"` (their
+  intersection, via `prune_by_both`) — added as part of a cleanlab parity
+  audit.
 - **Train/test contamination auditing** (`contamination.py`) — a two-stage
   pipeline: cheap LSHBloom MinHash/Bloom-filter candidate screening (via
   `datasketch`) over every row, then optional Min-K%++ log-probability
@@ -176,7 +183,14 @@ of the LazyClean module's D4 semantic-dedup idea; the IVF-HNSW/spherical
 k-means scale-out path is still out of scope, see `dedup.py`). Zero-vector
 ("no extractable features") rows are honestly reported as "not
 comparable," distinct from both confirmed-duplicate and confirmed-distinct
-pairs. Install via the `clean` extra.
+pairs.
+
+`detect_near_duplicate_images` is the image-modality counterpart: it embeds
+a batch of already-decoded images via native ONNX Runtime (no PyTorch, no
+CLIP-specific Python package — a Tier-2, opt-in-gated CLIP vision model per
+`image_dedup.py`'s model allowlist) and reuses `dedup.py`'s same
+modality-agnostic near-duplicate scan to flag near-duplicate image pairs.
+Install via the `clean` extra.
 
 ## `dscraft.forecast`
 
