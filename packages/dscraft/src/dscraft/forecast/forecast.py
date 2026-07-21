@@ -1,9 +1,20 @@
 """Classical statistical forecasting (architecture doc Part 3, "Module 3: LazyForecast").
 
-This module implements the **one signature capability** in scope for this
-scaffold-depth pass: fitting Nixtla's ``statsforecast`` classical models
-(``AutoARIMA`` and ``AutoETS``) over a Tier-1 Arrow-backed pandas or Polars
-input, per the shared data-tier convention in architecture doc §2.1.
+This module implements the classical-statistical-forecasting branch of
+LazyForecast: fitting Nixtla's ``statsforecast`` classical models over a
+Tier-1 Arrow-backed pandas or Polars input, per the shared data-tier
+convention in architecture doc §2.1. ``SUPPORTED_MODELS`` covers the
+established classical model catalog ``statsforecast`` ships out of the box
+-- autoregressive/exponential-smoothing autofits (``AutoARIMA``,
+``AutoETS``, ``AutoCES``, ``AutoTheta``), simple baselines (``Naive``,
+``SeasonalNaive``, ``RandomWalkWithDrift``, ``HistoricAverage``,
+``WindowAverage``, ``SeasonalWindowAverage``), and the Croston family for
+intermittent-demand series (``CrostonClassic``, ``CrostonOptimized``,
+``CrostonSBA``) -- expanded from the original AutoARIMA/AutoETS-only
+allowlist per a gap analysis against *Forecasting: Principles and
+Practice, the Pythonic Way* (issue #20). Zero new dependencies: every one
+of these classes ships in the ``statsforecast`` dependency this subpackage
+already requires.
 
 Explicitly out of scope for this pass (see package README for the full
 rationale): the tree-based ML branch (MLForecast/LightGBM/XGBoost), the
@@ -19,12 +30,26 @@ from __future__ import annotations
 
 import warnings
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 import numpy as np
 import pandas as pd
 from statsforecast import StatsForecast
-from statsforecast.models import AutoARIMA, AutoETS
+from statsforecast.models import (
+    AutoARIMA,
+    AutoCES,
+    AutoETS,
+    AutoTheta,
+    CrostonClassic,
+    CrostonOptimized,
+    CrostonSBA,
+    HistoricAverage,
+    Naive,
+    RandomWalkWithDrift,
+    SeasonalNaive,
+    SeasonalWindowAverage,
+    WindowAverage,
+)
 
 from dscraft.core.data import from_polars_zero_copy, is_arrow_backed_pandas, pandas_arrow_dtypes
 
@@ -41,13 +66,71 @@ __all__ = [
     "forecast",
 ]
 
-#: Model names this scaffold-depth pass supports, per the architecture doc's
-#: explicit scope: classical statistical forecasting only (AutoARIMA and
-#: AutoETS via Nixtla's statsforecast). Nixtla also ships AutoTheta/AutoCES/
-#: etc., but adding those is not part of this pass's signature capability.
+#: Model names this pass supports, per the architecture doc's explicit
+#: scope: classical statistical forecasting via Nixtla's statsforecast.
+#: This is the full "established classical model" catalog statsforecast
+#: ships out of the box (issue #20's gap analysis against *Forecasting:
+#: Principles and Practice, the Pythonic Way*) -- autoregressive/
+#: exponential-smoothing autofits, simple baselines, and the Croston
+#: intermittent-demand family. Tree-based ML models (MLForecast/LightGBM/
+#: XGBoost) and zero-shot Time Series Foundation Models remain explicitly
+#: out of scope for this pass (see module docstring).
 SUPPORTED_MODELS: dict[str, type] = {
     "AutoARIMA": AutoARIMA,
     "AutoETS": AutoETS,
+    "AutoCES": AutoCES,
+    "AutoTheta": AutoTheta,
+    "SeasonalNaive": SeasonalNaive,
+    "Naive": Naive,
+    "RandomWalkWithDrift": RandomWalkWithDrift,
+    "HistoricAverage": HistoricAverage,
+    "WindowAverage": WindowAverage,
+    "SeasonalWindowAverage": SeasonalWindowAverage,
+    "CrostonClassic": CrostonClassic,
+    "CrostonOptimized": CrostonOptimized,
+    "CrostonSBA": CrostonSBA,
+}
+
+#: Per-model instantiation strategy, keyed by the same names as
+#: :data:`SUPPORTED_MODELS`. Not every statsforecast model constructor
+#: accepts ``season_length`` as its (sole) tunable parameter --
+#: ``Naive``/``RandomWalkWithDrift``/``HistoricAverage``/the Croston family
+#: take no periodicity argument at all, and ``WindowAverage``/
+#: ``SeasonalWindowAverage`` take a ``window_size`` instead of (or in
+#: addition to) ``season_length``. Rather than force every model through
+#: the same ``SUPPORTED_MODELS[name](season_length=...)`` call (which would
+#: raise ``TypeError`` for the no-argument/``window_size`` models above),
+#: each entry here is a small factory closing over the model class that
+#: knows its own constructor shape. ``config.season_length`` doubles as a
+#: sane default window size for the two window-based models -- there is no
+#: separate "window size" knob on :class:`ForecastConfig` and adding one
+#: for two models is not worth the added surface area at this scope.
+#: Every factory below passes ``alias=<the SUPPORTED_MODELS key>`` explicitly.
+#: Several statsforecast models default ``alias`` to an abbreviation that
+#: differs from their class name (e.g. ``RandomWalkWithDrift`` ->
+#: ``"RWD"``, ``SeasonalWindowAverage`` -> ``"SeasWA"``, ``AutoCES`` ->
+#: ``"CES"``) -- since ``StatsForecast`` names each output forecast column
+#: after the fitted model's ``alias``, leaving the default in place would
+#: make ``forecast()``'s output columns disagree with the name the caller
+#: selected via ``ForecastConfig.models``. Pinning ``alias`` here keeps the
+#: SUPPORTED_MODELS key, the config value, and the output column name all
+#: identical, regardless of what any individual model happens to default to.
+_MODEL_FACTORIES: dict[str, Callable[["ForecastConfig"], Any]] = {
+    "AutoARIMA": lambda config: AutoARIMA(season_length=config.season_length, alias="AutoARIMA"),
+    "AutoETS": lambda config: AutoETS(season_length=config.season_length, alias="AutoETS"),
+    "AutoCES": lambda config: AutoCES(season_length=config.season_length, alias="AutoCES"),
+    "AutoTheta": lambda config: AutoTheta(season_length=config.season_length, alias="AutoTheta"),
+    "SeasonalNaive": lambda config: SeasonalNaive(season_length=config.season_length, alias="SeasonalNaive"),
+    "Naive": lambda config: Naive(alias="Naive"),
+    "RandomWalkWithDrift": lambda config: RandomWalkWithDrift(alias="RandomWalkWithDrift"),
+    "HistoricAverage": lambda config: HistoricAverage(alias="HistoricAverage"),
+    "WindowAverage": lambda config: WindowAverage(window_size=config.season_length, alias="WindowAverage"),
+    "SeasonalWindowAverage": lambda config: SeasonalWindowAverage(
+        season_length=config.season_length, window_size=config.season_length, alias="SeasonalWindowAverage"
+    ),
+    "CrostonClassic": lambda config: CrostonClassic(alias="CrostonClassic"),
+    "CrostonOptimized": lambda config: CrostonOptimized(alias="CrostonOptimized"),
+    "CrostonSBA": lambda config: CrostonSBA(alias="CrostonSBA"),
 }
 
 #: statsforecast's required long-format schema (architecture doc §2.1's
@@ -101,8 +184,8 @@ class ForecastConfig:
         unknown = set(self.models) - set(SUPPORTED_MODELS)
         if unknown:
             raise ValueError(
-                f"Unsupported model(s) {sorted(unknown)!r}. This scaffold-depth "
-                f"pass only supports the classical models in SUPPORTED_MODELS: "
+                f"Unsupported model(s) {sorted(unknown)!r}. This pass only "
+                f"supports the classical models in SUPPORTED_MODELS: "
                 f"{sorted(SUPPORTED_MODELS)!r}. Tree-based ML models and "
                 "zero-shot TSFMs are explicitly out of scope for this pass "
                 "(see README)."
@@ -265,12 +348,13 @@ def prepare_frame(data: Any, config: ForecastConfig | None = None) -> pd.DataFra
 def build_statsforecast(config: ForecastConfig | None = None) -> StatsForecast:
     """Build a ``statsforecast.StatsForecast`` instance from a :class:`ForecastConfig`.
 
-    Instantiates exactly the classical models named in the architecture doc
-    for this pass (``AutoARIMA``/``AutoETS``), each parameterized with
-    ``config.season_length``.
+    Instantiates each model named in ``config.models`` via its
+    :data:`_MODEL_FACTORIES` entry, since not every ``SUPPORTED_MODELS``
+    class accepts a bare ``season_length=...`` constructor call (see
+    ``_MODEL_FACTORIES``'s docstring comment above).
     """
     config = config or ForecastConfig()
-    models = [SUPPORTED_MODELS[name](season_length=config.season_length) for name in config.models]
+    models = [_MODEL_FACTORIES[name](config) for name in config.models]
     return StatsForecast(models=models, freq=config.freq, n_jobs=config.n_jobs)
 
 

@@ -55,8 +55,29 @@ def arrow_backed_panel(synthetic_panel: pd.DataFrame) -> pd.DataFrame:
 
 
 def test_supported_models_are_classical_only() -> None:
-    """SUPPORTED_MODELS must contain exactly the two classical models in scope for this pass."""
-    assert set(SUPPORTED_MODELS) == {"AutoARIMA", "AutoETS"}
+    """SUPPORTED_MODELS must contain exactly the classical statsforecast models in scope for this pass.
+
+    Per issue #20's gap analysis, this now covers the full classical
+    catalog statsforecast ships (autofits, simple baselines, Croston
+    family) -- but must NOT include anything from the tree-based ML branch
+    (MLForecast/LightGBM/XGBoost) or zero-shot TSFMs, which remain
+    explicitly out of scope.
+    """
+    assert set(SUPPORTED_MODELS) == {
+        "AutoARIMA",
+        "AutoETS",
+        "AutoCES",
+        "AutoTheta",
+        "SeasonalNaive",
+        "Naive",
+        "RandomWalkWithDrift",
+        "HistoricAverage",
+        "WindowAverage",
+        "SeasonalWindowAverage",
+        "CrostonClassic",
+        "CrostonOptimized",
+        "CrostonSBA",
+    }
 
 
 def test_forecast_config_rejects_unsupported_model() -> None:
@@ -141,6 +162,38 @@ def test_forecast_multiple_models(arrow_backed_panel: pd.DataFrame) -> None:
     assert len(result) == 2 * config.horizon
     assert np.isfinite(result["AutoARIMA"].to_numpy()).all()
     assert np.isfinite(result["AutoETS"].to_numpy()).all()
+
+
+@pytest.mark.parametrize(
+    "model_name",
+    [
+        "AutoCES",
+        "AutoTheta",
+        "SeasonalNaive",
+        "Naive",
+        "RandomWalkWithDrift",
+        "HistoricAverage",
+        "WindowAverage",
+        "SeasonalWindowAverage",
+        "CrostonClassic",
+        "CrostonOptimized",
+        "CrostonSBA",
+    ],
+)
+def test_forecast_each_newly_added_model_fits_and_forecasts(
+    arrow_backed_panel: pd.DataFrame, model_name: str
+) -> None:
+    """Each model added to SUPPORTED_MODELS in issue #20 must actually fit
+    and forecast on real (synthetic) data, not just be importable -- proving
+    build_statsforecast()'s per-model _MODEL_FACTORIES entry constructs a
+    usable model instance for every name in SUPPORTED_MODELS.
+    """
+    config = ForecastConfig(horizon=7, freq="D", season_length=7, models=(model_name,))
+    result = forecast(arrow_backed_panel, config)
+
+    assert set(result.columns) == {"unique_id", "ds", model_name}
+    assert len(result) == 2 * config.horizon
+    assert np.isfinite(result[model_name].to_numpy()).all()
 
 
 def test_forecast_accepts_plain_pandas_without_arrow_dtype(synthetic_panel: pd.DataFrame) -> None:

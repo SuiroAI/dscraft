@@ -31,7 +31,7 @@ what's here today and how to install/run it.
 | [`dscraft.core`](#dscraftcore) | *(base install)* | Shared substrate: three-tier data conventions, OTel GenAI telemetry helpers, license-isolation policy, shared sandbox executor. |
 | [`dscraft.automl`](#dscraftautoml) | `automl` (+ `automl-onnx`) | Clean-room tabular AutoML — `.compile()` fuses a fitted `sklearn.pipeline.Pipeline` into one portable ONNX graph via `skl2onnx`. |
 | [`dscraft.clean`](#dscraftclean) | `clean` | Data-quality firewall — ONNX Runtime (PyTorch-free) text embeddings feeding cosine-similarity near-duplicate detection. |
-| [`dscraft.forecast`](#dscraftforecast) | `forecast` | Classical statistical forecasting (AutoARIMA/AutoETS via Nixtla `statsforecast`) over a Tier-1 Arrow-backed pipeline, plus a basic backtest report. |
+| [`dscraft.forecast`](#dscraftforecast) | `forecast` | Classical statistical forecasting (the full Nixtla `statsforecast` classical catalog: AutoARIMA/AutoETS/AutoCES/AutoTheta autofits, simple baselines, Croston) over a Tier-1 Arrow-backed pipeline, plus a basic backtest report. |
 | [`dscraft.graph`](#dscraftgraph) | `graph` | Sparse graph ML — a concrete Tier-2 COO↔CSR/CSC tensor adapter (PyG↔SciPy) plus a minimal GCN forward pass. |
 | [`dscraft.vision`](#dscraftvision) | `vision` | Computer vision — a concrete Tier-3 dense image pipeline (decode→augment→tensor) plus a small CNN exported via `torch.export()`→ONNX. |
 | [`dscraft.tune`](#dscrafttune) | `tune` | Local LLM fine-tuning — an Adapter-Factory `BaseTrainingAdapter` interface with a `ProgrammaticAdapter` doing real (tiny) LoRA fine-tuning via `peft`/`transformers`. |
@@ -180,12 +180,36 @@ pairs. Install via the `clean` extra.
 
 ## `dscraft.forecast`
 
-Classical statistical forecasting (AutoARIMA/AutoETS via Nixtla's
-`statsforecast`) over a Tier-1 Arrow-backed input pipeline, with a basic
-train/test backtest reporting MAE/RMSE. The tree-based ML branch, TSFM
-zero-shot branch, self-healing preprocessing, and conformal-prediction
-leaderboard from the full LazyForecast design are deferred. Install via
-the `forecast` extra.
+Classical statistical forecasting via Nixtla's `statsforecast` over a
+Tier-1 Arrow-backed input pipeline, with a basic train/test backtest
+reporting MAE/RMSE. `SUPPORTED_MODELS` covers the full classical catalog
+`statsforecast` ships out of the box: autoregressive/exponential-smoothing
+autofits (`AutoARIMA`, `AutoETS`, `AutoCES`, `AutoTheta`), simple baselines
+(`Naive`, `SeasonalNaive`, `RandomWalkWithDrift`, `HistoricAverage`,
+`WindowAverage`, `SeasonalWindowAverage`), and the Croston family for
+intermittent-demand series (`CrostonClassic`, `CrostonOptimized`,
+`CrostonSBA`) — zero new dependencies, since every one of these classes
+already ships in `statsforecast`. Backtest MAE/RMSE are computed via
+Nixtla's `utilsforecast` (the shared metrics/plotting/preprocessing-helper
+layer the rest of the nixtlaverse already assumes) rather than
+hand-rolled, so future backends added to this subpackage share one
+canonical metric implementation. `decompose()` exposes STL/MSTL time
+series decomposition (plus an optional Box-Cox transform) as a
+standalone, inspectable diagnostic -- trend/seasonal/residual components
+returned as a tidy long-format DataFrame, not folded silently into
+`forecast()` -- via `statsmodels`/`scipy`, both already transitively
+available in this extra. The tree-based ML branch, TSFM zero-shot branch,
+self-healing preprocessing, and conformal-prediction leaderboard from the
+full LazyForecast design are deferred. Install via the `forecast` extra.
+
+In addition to the hermetic synthetic-panel tests and the `statsmodels`-
+bundled co2/nile real-dataset validation, this subpackage's test suite
+also validates `forecast()`/`backtest()` against a real published
+forecasting-competition benchmark (the M3 competition's "Other" group) via
+Nixtla's `datasetsforecast` -- a test-only dependency (like `statsmodels`)
+that downloads its data over the network on first use and is skipped
+(not failed) when offline; see
+`tests/forecast/test_datasetsforecast_validation.py`.
 
 ## `dscraft.graph`
 

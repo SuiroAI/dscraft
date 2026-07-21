@@ -9,6 +9,18 @@ hold out the last N points of each series, forecast them with
 :func:`dscraft.forecast.forecast.forecast`, and report MAE/RMSE per
 series and averaged across series.
 
+Per issue #29's adoption decision, the actual MAE/RMSE calculation is
+delegated to Nixtla's ``utilsforecast.losses.mae``/``rmse`` rather than
+hand-rolled with raw numpy -- ``utilsforecast`` is the shared metrics
+layer the rest of the nixtlaverse (StatsForecast/MLForecast/
+NeuralForecast/HierarchicalForecast) already assumes, so future backends
+added to this subpackage (MLForecast in #21, NeuralForecast in #24,
+conformal prediction in #26, hierarchical reconciliation in #27) can all
+score against the same canonical metric implementation instead of each
+reinventing one. This module still owns the *backtest* orchestration
+(train/test split, forecasting, alignment checking, reporting) -- only
+the per-series metric arithmetic itself is now delegated.
+
 This is the **one canonical backtest path** in this package -- there is no
 parallel/alternate evaluation implementation anywhere else here.
 """
@@ -21,6 +33,8 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+from utilsforecast.losses import mae as uf_mae
+from utilsforecast.losses import rmse as uf_rmse
 
 from .forecast import ForecastConfig, build_statsforecast, prepare_frame
 
@@ -211,21 +225,29 @@ def backtest(
             stacklevel=2,
         )
 
+    # Per issue #29: delegate the actual per-series metric arithmetic to
+    # utilsforecast's battle-tested mae()/rmse() rather than hand-rolling it
+    # with raw numpy -- see this module's docstring for why. Both functions
+    # take the same long-format (unique_id, y, <model columns>) shape
+    # `merged` is already in, and return one row per unique_id with one
+    # column per model holding that metric.
+    mae_by_series = uf_mae(merged, models=model_names, id_col="unique_id", target_col="y")
+    rmse_by_series = uf_rmse(merged, models=model_names, id_col="unique_id", target_col="y")
+    n_points_by_series = merged.groupby("unique_id", sort=False).size()
+
     metrics: list[SeriesMetric] = []
-    for unique_id, group in merged.groupby("unique_id", sort=False):
-        actual = group["y"].to_numpy()
+    for _, mae_row in mae_by_series.iterrows():
+        unique_id = mae_row["unique_id"]
+        rmse_row = rmse_by_series.loc[rmse_by_series["unique_id"] == unique_id].iloc[0]
+        n_points = int(n_points_by_series.loc[unique_id])
         for model_name in model_names:
-            predicted = group[model_name].to_numpy()
-            error = predicted - actual
-            mae = float(np.mean(np.abs(error)))
-            rmse = float(np.sqrt(np.mean(error**2)))
             metrics.append(
                 SeriesMetric(
                     unique_id=str(unique_id),
                     model=model_name,
-                    mae=mae,
-                    rmse=rmse,
-                    n_points=len(group),
+                    mae=float(mae_row[model_name]),
+                    rmse=float(rmse_row[model_name]),
+                    n_points=n_points,
                     expected_points=test_size,
                 )
             )
