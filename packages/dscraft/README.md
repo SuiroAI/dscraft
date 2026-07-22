@@ -385,4 +385,5 @@ See `DSCraft_Unified_Architecture.md` at the repo root for the full
 locked v1 architecture — module scope, algorithms, licensing policy, and
 what's deferred to later phases. Each subpackage's own docstrings and
 `packages/dscraft/tests/<subpackage>/` cover implementation-level detail
-this README intentionally omits.
+this README intentionally omits. `ROADMAP.md` at the repo root has the
+RICED-scored priority order for planned-but-unbuilt capabilities.
