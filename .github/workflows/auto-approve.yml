@@ -1,0 +1,482 @@
+name: Auto-approve
+
+# Auto-approves and squash-merges PRs authored by a small allowlist of
+# trusted humans (gr3enarr0w) once (a) every required
+# branch-protection status check on the PR's head commit is green, and (b)
+# an LLM call to an Ollama Cloud (OpenAI-compatible) endpoint judges the
+# PR's diff as aligned with this repo's locked design constraints in
+# CLAUDE.md. If either condition fails, no merge action is taken: an
+# unlisted author means the workflow does nothing at all, and a
+# checks-green-but-misaligned PR gets a comment explaining the concern and
+# is left for a human to review and merge manually.
+#
+# This is a belt-and-suspenders layer on top of required status checks and
+# CodeRabbit review, not a replacement for either -- it only ever acts on
+# PRs from the two people already trusted to push directly to this repo,
+# and only after independently re-confirming checks are green.
+#
+# Uses pull_request (not pull_request_target) throughout: both allowlisted
+# authors push same-repo branches, never forks, so there is no
+# secret-exposure motivation for the target-branch-context variant here.
+#
+# This workflow depends on infrastructure that does not exist yet and will
+# not fire correctly until a human provisions it:
+#   Repo secrets (Settings > Secrets and variables > Actions > Secrets):
+#     - AUTO_APPROVE_APP_ID           GitHub App ID for a dedicated,
+#                                     narrowly-scoped "auto-approve bot"
+#                                     App installed on this repo. Needed
+#                                     because the default GITHUB_TOKEN
+#                                     cannot approve a PR opened by the
+#                                     same workflow's actor in all cases,
+#                                     and cannot trigger downstream
+#                                     required-check runs on the resulting
+#                                     merge commit the way a distinct App
+#                                     identity can. The App must also be
+#                                     granted "Administration: Read"
+#                                     repository permission: reading
+#                                     branch protection's required status
+#                                     check list (GET
+#                                     /repos/{owner}/{repo}/branches/{branch}/protection)
+#                                     requires that permission per GitHub's
+#                                     REST API docs, and it is *not*
+#                                     grantable to GITHUB_TOKEN -- there is
+#                                     no "administration" key in a
+#                                     workflow's `permissions:` block (see
+#                                     the full enumerated list in "Workflow
+#                                     syntax for GitHub Actions"). That is
+#                                     why the two steps below that read
+#                                     branch protection use the App
+#                                     installation token instead of
+#                                     `github.token`, and why that token is
+#                                     minted before those steps rather than
+#                                     only just before the approve/merge
+#                                     steps.
+#     - AUTO_APPROVE_APP_PRIVATE_KEY  Private key (PEM) for that App.
+#     - OLLAMA_API_KEY                API key for an Ollama Cloud account.
+#     - OLLAMA_BASE_URL               Base URL for the Ollama Cloud
+#                                     OpenAI-compatible endpoint (the
+#                                     workflow POSTs to
+#                                     "$OLLAMA_BASE_URL/v1/chat/completions").
+#   Repo variables (Settings > Secrets and variables > Actions > Variables):
+#     - OLLAMA_MODEL                  Model name to request, e.g.
+#                                     "gpt-oss:120b" or whatever the human
+#                                     provisions on their Ollama Cloud
+#                                     account -- deliberately not
+#                                     hardcoded here since that choice is
+#                                     environment-specific and will change
+#                                     over time.
+# Until all five of the above exist, this workflow's design-alignment step
+# will simply fail its HTTP call and the job will fail closed (comment
+# posted, no merge) -- which is the expected, safe behavior in the
+# meantime, not a bug.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+
+# NOTE: branch protection's required-status-check list can only be read by
+# a caller with repository "Administration: Read" access (per GitHub's
+# REST API docs for "Get branch protection"). "administration" is not a
+# valid key in this `permissions:` block -- the full set of scopes
+# GITHUB_TOKEN can ever hold is enumerated in GitHub's "Workflow syntax
+# for GitHub Actions" docs, and administration is not among them, by
+# design (it is deliberately excluded from the ephemeral Actions token).
+# So this block intentionally does NOT list `administration: read`; it
+# would either be rejected as an unrecognized key or silently do nothing.
+# The steps that need to read branch protection use the GitHub App
+# installation token (minted early in the job) instead of github.token,
+# since GitHub Apps -- unlike GITHUB_TOKEN -- can be granted
+# Administration permission.
+permissions:
+  contents: write
+  pull-requests: write
+  checks: read
+
+concurrency:
+  group: auto-approve-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  auto-approve:
+    name: auto-approve
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Trusted-author allowlist gate. Anything else: this job does not run
+    # at all -- no approval, no comment, nothing observable.
+    if: contains(fromJSON('["gr3enarr0w"]'), github.event.pull_request.user.login)
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      # Minted here, before the first branch-protection read, rather than
+      # just before the approve/merge steps: reading branch protection's
+      # required-status-check list requires "Administration: Read", which
+      # only a GitHub App/PAT can hold -- GITHUB_TOKEN cannot, so both
+      # "Poll required status checks to green" and "Re-poll checks after
+      # branch update" below need this token too, not just github.token.
+      - name: Mint GitHub App installation token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.AUTO_APPROVE_APP_ID }}
+          private-key: ${{ secrets.AUTO_APPROVE_APP_PRIVATE_KEY }}
+
+      - name: Poll required status checks to green
+        id: poll-checks
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -uo pipefail
+
+          # Read the actual required contexts live, every run -- never
+          # hardcode the "test (<subpackage>)" job-name list, since it can
+          # change as subpackages are added/removed from the test matrix.
+          required_contexts="$(gh api "repos/${REPO}/branches/main/protection" --jq '.required_status_checks.contexts[]')"
+
+          if [[ -z "$required_contexts" ]]; then
+            echo "::error::Could not read required_status_checks.contexts from branch protection; refusing to proceed."
+            echo "checks_green=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Required contexts:"
+          echo "$required_contexts"
+
+          deadline=$(( $(date +%s) + 20*60 ))
+
+          while true; do
+            # Paginate: ~12 required checks can exceed a single page's
+            # default page size.
+            check_runs_json="$(gh api --paginate "repos/${REPO}/commits/${HEAD_SHA}/check-runs" --jq '.check_runs')"
+
+            all_green=true
+            failed=false
+
+            while IFS= read -r context; do
+              [[ -z "$context" ]] && continue
+
+              # Conclusion of the most recently-started run for this
+              # context name. Single-line python3 -c deliberately -- no
+              # embedded newlines, so this is immune to both YAML
+              # block-scalar indentation rules and Python's own
+              # top-level-indentation rules, neither of which tolerate a
+              # heredoc/multi-line string indented to match this file's
+              # surrounding bash style.
+              conclusion="$(echo "$check_runs_json" | python3 -c "import json, sys; runs = json.load(sys.stdin); name = sys.argv[1]; matches = [r for r in runs if r.get('name') == name]; matches.sort(key=lambda r: r.get('started_at') or ''); print((matches[-1].get('conclusion') or '') if matches else '')" "$context")"
+
+              if [[ "$conclusion" == "failure" || "$conclusion" == "cancelled" || "$conclusion" == "timed_out" || "$conclusion" == "action_required" ]]; then
+                echo "Required check '${context}' concluded '${conclusion}' -- not proceeding."
+                failed=true
+                break
+              fi
+
+              if [[ "$conclusion" != "success" ]]; then
+                all_green=false
+              fi
+            done <<< "$required_contexts"
+
+            if $failed; then
+              echo "checks_green=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+
+            if $all_green; then
+              echo "All required checks are green."
+              echo "checks_green=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+
+            if (( $(date +%s) >= deadline )); then
+              echo "Timed out after 20 minutes waiting for required checks; not proceeding."
+              echo "checks_green=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+
+            sleep 30
+          done
+
+      - name: Fetch PR diff
+        if: steps.poll-checks.outputs.checks_green == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh pr diff "${{ github.event.pull_request.number }}" > /tmp/pr.diff
+
+      - name: Design-alignment check via Ollama Cloud
+        id: alignment
+        if: steps.poll-checks.outputs.checks_green == 'true'
+        env:
+          OLLAMA_BASE_URL: ${{ secrets.OLLAMA_BASE_URL }}
+          OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
+          OLLAMA_MODEL: ${{ vars.OLLAMA_MODEL }}
+        run: |
+          set -uo pipefail
+
+          # The actual review script is written out here as a single
+          # base64 blob (decoded to /tmp/alignment_check.py below) rather
+          # than as an inline heredoc. A multi-line heredoc indented to
+          # match this file's surrounding bash style breaks two different
+          # ways at once: YAML's block-scalar parser requires every
+          # physical line of a `run: |` block to carry at least the
+          # block's own indentation, while Python requires its top-level
+          # statements to carry *no* leading indentation at all -- there
+          # is no single indentation level that satisfies both. A single
+          # unbroken base64 line sidesteps both constraints entirely. The
+          # decoded script's plaintext source is the canonical version of
+          # this logic; treat this blob as generated from it, not as
+          # independently-maintained.
+          #
+          # Plaintext of the decoded script:
+          #
+          #   import json
+          #   import os
+          #   import sys
+          #   import urllib.error
+          #   import urllib.request
+          #
+          #   def fail_closed(reasoning):
+          #       with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+          #           f.write("aligned=false\n")
+          #           f.write("reasoning<<EOF\n")
+          #           f.write(reasoning + "\n")
+          #           f.write("EOF\n")
+          #       print(f"NOT ALIGNED (fail-closed): {reasoning}")
+          #       sys.exit(0)
+          #
+          #   base_url = os.environ.get("OLLAMA_BASE_URL", "").rstrip("/")
+          #   api_key = os.environ.get("OLLAMA_API_KEY", "")
+          #   model = os.environ.get("OLLAMA_MODEL", "")
+          #
+          #   if not base_url or not api_key or not model:
+          #       fail_closed(
+          #           "OLLAMA_BASE_URL, OLLAMA_API_KEY, or OLLAMA_MODEL is not "
+          #           "configured for this repo, so no design-alignment check "
+          #           "could be performed."
+          #       )
+          #
+          #   try:
+          #       with open("CLAUDE.md", "r") as f:
+          #           claude_md = f.read()
+          #   except OSError as exc:
+          #       fail_closed(f"Could not read CLAUDE.md at the PR head commit: {exc}")
+          #
+          #   try:
+          #       with open("/tmp/pr.diff", "r") as f:
+          #           pr_diff = f.read()
+          #   except OSError as exc:
+          #       fail_closed(f"Could not read the PR diff: {exc}")
+          #
+          #   system_prompt = (
+          #       "You are reviewing a pull request's diff against a project's "
+          #       "locked, non-negotiable architecture constraints. The full "
+          #       "contents of the project's CLAUDE.md governance document are "
+          #       "below -- treat everything in it, especially the sections "
+          #       "'Core scope constraints', 'Shared architecture (LazyCore)', "
+          #       "'Licensing policy (LazyIsolate)', and 'Working as a "
+          #       "library, not a pile of scripts', as settled and "
+          #       "non-negotiable.\n\n"
+          #       "=== CLAUDE.md ===\n"
+          #       f"{claude_md}\n"
+          #       "=== end CLAUDE.md ===\n\n"
+          #       "Identify any violation of these constraints introduced by "
+          #       "the diff you will be given, for example (non-exhaustive): "
+          #       "a new shared LLM-router/multi-provider abstraction added "
+          #       "when CLAUDE.md explicitly forbids one; a GPL/AGPL "
+          #       "dependency added without the documented isolation pattern "
+          #       "(subprocess/IPC for local runtime use, full replacement if "
+          #       "it would be the network-facing service); a new "
+          #       "subpackage-to-subpackage import introduced when the "
+          #       "module dependency graph says subpackages stay "
+          #       "independent; non-MIT code added to platform code; a new "
+          #       "standalone script added outside the installable package "
+          #       "structure instead of behind a real function/class API; "
+          #       "duplicated logic next to an existing implementation of "
+          #       "the same capability instead of extending it in place.\n\n"
+          #       "Respond with exactly one JSON object and nothing else, no "
+          #       "markdown code fences, no preamble, no trailing text: "
+          #       '{"aligned": true or false, "reasoning": "1-3 sentences"}'
+          #   )
+          #
+          #   user_prompt = "Here is the PR diff to review:\n\n" f"{pr_diff}"
+          #
+          #   payload = json.dumps(
+          #       {
+          #           "model": model,
+          #           "messages": [
+          #               {"role": "system", "content": system_prompt},
+          #               {"role": "user", "content": user_prompt},
+          #           ],
+          #           "stream": False,
+          #       }
+          #   ).encode("utf-8")
+          #
+          #   req = urllib.request.Request(
+          #       f"{base_url}/v1/chat/completions",
+          #       data=payload,
+          #       method="POST",
+          #       headers={
+          #           "Authorization": f"Bearer {api_key}",
+          #           "Content-Type": "application/json",
+          #       },
+          #   )
+          #
+          #   try:
+          #       with urllib.request.urlopen(req, timeout=120) as resp:
+          #           body = json.loads(resp.read().decode("utf-8"))
+          #   except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError) as exc:
+          #       fail_closed(f"The Ollama Cloud request failed or timed out: {exc}")
+          #   except json.JSONDecodeError as exc:
+          #       fail_closed(f"The Ollama Cloud response was not valid JSON: {exc}")
+          #
+          #   try:
+          #       content = body["choices"][0]["message"]["content"]
+          #   except (KeyError, IndexError, TypeError) as exc:
+          #       fail_closed(f"The Ollama Cloud response did not have the expected shape: {exc}")
+          #
+          #   try:
+          #       verdict = json.loads(content)
+          #   except json.JSONDecodeError as exc:
+          #       fail_closed(f"The model's response body was not parseable JSON: {exc}")
+          #
+          #   if not isinstance(verdict, dict) or verdict.get("aligned") is not True:
+          #       reasoning = verdict.get("reasoning") if isinstance(verdict, dict) else None
+          #       fail_closed(
+          #           reasoning
+          #           or "The model judged the diff not aligned with CLAUDE.md, "
+          #           "or returned an unexpected/ambiguous verdict."
+          #       )
+          #
+          #   reasoning = verdict.get("reasoning", "No reasoning provided.")
+          #
+          #   with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+          #       f.write("aligned=true\n")
+          #       f.write("reasoning<<EOF\n")
+          #       f.write(str(reasoning) + "\n")
+          #       f.write("EOF\n")
+          #
+          #   print(f"ALIGNED: {reasoning}")
+
+          echo "aW1wb3J0IGpzb24KaW1wb3J0IG9zCmltcG9ydCBzeXMKaW1wb3J0IHVybGxpYi5lcnJvcgppbXBvcnQgdXJsbGliLnJlcXVlc3QKCmRlZiBmYWlsX2Nsb3NlZChyZWFzb25pbmcpOgogICAgd2l0aCBvcGVuKG9zLmVudmlyb25bIkdJVEhVQl9PVVRQVVQiXSwgImEiKSBhcyBmOgogICAgICAgIGYud3JpdGUoImFsaWduZWQ9ZmFsc2VcbiIpCiAgICAgICAgZi53cml0ZSgicmVhc29uaW5nPDxFT0ZcbiIpCiAgICAgICAgZi53cml0ZShyZWFzb25pbmcgKyAiXG4iKQogICAgICAgIGYud3JpdGUoIkVPRlxuIikKICAgIHByaW50KGYiTk9UIEFMSUdORUQgKGZhaWwtY2xvc2VkKToge3JlYXNvbmluZ30iKQogICAgc3lzLmV4aXQoMCkKCmJhc2VfdXJsID0gb3MuZW52aXJvbi5nZXQoIk9MTEFNQV9CQVNFX1VSTCIsICIiKS5yc3RyaXAoIi8iKQphcGlfa2V5ID0gb3MuZW52aXJvbi5nZXQoIk9MTEFNQV9BUElfS0VZIiwgIiIpCm1vZGVsID0gb3MuZW52aXJvbi5nZXQoIk9MTEFNQV9NT0RFTCIsICIiKQoKaWYgbm90IGJhc2VfdXJsIG9yIG5vdCBhcGlfa2V5IG9yIG5vdCBtb2RlbDoKICAgIGZhaWxfY2xvc2VkKAogICAgICAgICJPTExBTUFfQkFTRV9VUkwsIE9MTEFNQV9BUElfS0VZLCBvciBPTExBTUFfTU9ERUwgaXMgbm90ICIKICAgICAgICAiY29uZmlndXJlZCBmb3IgdGhpcyByZXBvLCBzbyBubyBkZXNpZ24tYWxpZ25tZW50IGNoZWNrICIKICAgICAgICAiY291bGQgYmUgcGVyZm9ybWVkLiIKICAgICkKCnRyeToKICAgIHdpdGggb3BlbigiQ0xBVURFLm1kIiwgInIiKSBhcyBmOgogICAgICAgIGNsYXVkZV9tZCA9IGYucmVhZCgpCmV4Y2VwdCBPU0Vycm9yIGFzIGV4YzoKICAgIGZhaWxfY2xvc2VkKGYiQ291bGQgbm90IHJlYWQgQ0xBVURFLm1kIGF0IHRoZSBQUiBoZWFkIGNvbW1pdDoge2V4Y30iKQoKdHJ5OgogICAgd2l0aCBvcGVuKCIvdG1wL3ByLmRpZmYiLCAiciIpIGFzIGY6CiAgICAgICAgcHJfZGlmZiA9IGYucmVhZCgpCmV4Y2VwdCBPU0Vycm9yIGFzIGV4YzoKICAgIGZhaWxfY2xvc2VkKGYiQ291bGQgbm90IHJlYWQgdGhlIFBSIGRpZmY6IHtleGN9IikKCnN5c3RlbV9wcm9tcHQgPSAoCiAgICAiWW91IGFyZSByZXZpZXdpbmcgYSBwdWxsIHJlcXVlc3QncyBkaWZmIGFnYWluc3QgYSBwcm9qZWN0J3MgIgogICAgImxvY2tlZCwgbm9uLW5lZ290aWFibGUgYXJjaGl0ZWN0dXJlIGNvbnN0cmFpbnRzLiBUaGUgZnVsbCAiCiAgICAiY29udGVudHMgb2YgdGhlIHByb2plY3QncyBDTEFVREUubWQgZ292ZXJuYW5jZSBkb2N1bWVudCBhcmUgIgogICAgImJlbG93IC0tIHRyZWF0IGV2ZXJ5dGhpbmcgaW4gaXQsIGVzcGVjaWFsbHkgdGhlIHNlY3Rpb25zICIKICAgICInQ29yZSBzY29wZSBjb25zdHJhaW50cycsICdTaGFyZWQgYXJjaGl0ZWN0dXJlIChMYXp5Q29yZSknLCAiCiAgICAiJ0xpY2Vuc2luZyBwb2xpY3kgKExhenlJc29sYXRlKScsIGFuZCAnV29ya2luZyBhcyBhICIKICAgICJsaWJyYXJ5LCBub3QgYSBwaWxlIG9mIHNjcmlwdHMnLCBhcyBzZXR0bGVkIGFuZCAiCiAgICAibm9uLW5lZ290aWFibGUuXG5cbiIKICAgICI9PT0gQ0xBVURFLm1kID09PVxuIgogICAgZiJ7Y2xhdWRlX21kfVxuIgogICAgIj09PSBlbmQgQ0xBVURFLm1kID09PVxuXG4iCiAgICAiSWRlbnRpZnkgYW55IHZpb2xhdGlvbiBvZiB0aGVzZSBjb25zdHJhaW50cyBpbnRyb2R1Y2VkIGJ5ICIKICAgICJ0aGUgZGlmZiB5b3Ugd2lsbCBiZSBnaXZlbiwgZm9yIGV4YW1wbGUgKG5vbi1leGhhdXN0aXZlKTogIgogICAgImEgbmV3IHNoYXJlZCBMTE0tcm91dGVyL211bHRpLXByb3ZpZGVyIGFic3RyYWN0aW9uIGFkZGVkICIKICAgICJ3aGVuIENMQVVERS5tZCBleHBsaWNpdGx5IGZvcmJpZHMgb25lOyBhIEdQTC9BR1BMICIKICAgICJkZXBlbmRlbmN5IGFkZGVkIHdpdGhvdXQgdGhlIGRvY3VtZW50ZWQgaXNvbGF0aW9uIHBhdHRlcm4gIgogICAgIihzdWJwcm9jZXNzL0lQQyBmb3IgbG9jYWwgcnVudGltZSB1c2UsIGZ1bGwgcmVwbGFjZW1lbnQgaWYgIgogICAgIml0IHdvdWxkIGJlIHRoZSBuZXR3b3JrLWZhY2luZyBzZXJ2aWNlKTsgYSBuZXcgIgogICAgInN1YnBhY2thZ2UtdG8tc3VicGFja2FnZSBpbXBvcnQgaW50cm9kdWNlZCB3aGVuIHRoZSAiCiAgICAibW9kdWxlIGRlcGVuZGVuY3kgZ3JhcGggc2F5cyBzdWJwYWNrYWdlcyBzdGF5ICIKICAgICJpbmRlcGVuZGVudDsgbm9uLU1JVCBjb2RlIGFkZGVkIHRvIHBsYXRmb3JtIGNvZGU7IGEgbmV3ICIKICAgICJzdGFuZGFsb25lIHNjcmlwdCBhZGRlZCBvdXRzaWRlIHRoZSBpbnN0YWxsYWJsZSBwYWNrYWdlICIKICAgICJzdHJ1Y3R1cmUgaW5zdGVhZCBvZiBiZWhpbmQgYSByZWFsIGZ1bmN0aW9uL2NsYXNzIEFQSTsgIgogICAgImR1cGxpY2F0ZWQgbG9naWMgbmV4dCB0byBhbiBleGlzdGluZyBpbXBsZW1lbnRhdGlvbiBvZiAiCiAgICAidGhlIHNhbWUgY2FwYWJpbGl0eSBpbnN0ZWFkIG9mIGV4dGVuZGluZyBpdCBpbiBwbGFjZS5cblxuIgogICAgIlJlc3BvbmQgd2l0aCBleGFjdGx5IG9uZSBKU09OIG9iamVjdCBhbmQgbm90aGluZyBlbHNlLCBubyAiCiAgICAibWFya2Rvd24gY29kZSBmZW5jZXMsIG5vIHByZWFtYmxlLCBubyB0cmFpbGluZyB0ZXh0OiAiCiAgICAneyJhbGlnbmVkIjogdHJ1ZSBvciBmYWxzZSwgInJlYXNvbmluZyI6ICIxLTMgc2VudGVuY2VzIn0nCikKCnVzZXJfcHJvbXB0ID0gIkhlcmUgaXMgdGhlIFBSIGRpZmYgdG8gcmV2aWV3OlxuXG4iIGYie3ByX2RpZmZ9IgoKcGF5bG9hZCA9IGpzb24uZHVtcHMoCiAgICB7CiAgICAgICAgIm1vZGVsIjogbW9kZWwsCiAgICAgICAgIm1lc3NhZ2VzIjogWwogICAgICAgICAgICB7InJvbGUiOiAic3lzdGVtIiwgImNvbnRlbnQiOiBzeXN0ZW1fcHJvbXB0fSwKICAgICAgICAgICAgeyJyb2xlIjogInVzZXIiLCAiY29udGVudCI6IHVzZXJfcHJvbXB0fSwKICAgICAgICBdLAogICAgICAgICJzdHJlYW0iOiBGYWxzZSwKICAgIH0KKS5lbmNvZGUoInV0Zi04IikKCnJlcSA9IHVybGxpYi5yZXF1ZXN0LlJlcXVlc3QoCiAgICBmIntiYXNlX3VybH0vdjEvY2hhdC9jb21wbGV0aW9ucyIsCiAgICBkYXRhPXBheWxvYWQsCiAgICBtZXRob2Q9IlBPU1QiLAogICAgaGVhZGVycz17CiAgICAgICAgIkF1dGhvcml6YXRpb24iOiBmIkJlYXJlciB7YXBpX2tleX0iLAogICAgICAgICJDb250ZW50LVR5cGUiOiAiYXBwbGljYXRpb24vanNvbiIsCiAgICB9LAopCgp0cnk6CiAgICB3aXRoIHVybGxpYi5yZXF1ZXN0LnVybG9wZW4ocmVxLCB0aW1lb3V0PTEyMCkgYXMgcmVzcDoKICAgICAgICBib2R5ID0ganNvbi5sb2FkcyhyZXNwLnJlYWQoKS5kZWNvZGUoInV0Zi04IikpCmV4Y2VwdCAodXJsbGliLmVycm9yLlVSTEVycm9yLCB1cmxsaWIuZXJyb3IuSFRUUEVycm9yLCBUaW1lb3V0RXJyb3IsIE9TRXJyb3IpIGFzIGV4YzoKICAgIGZhaWxfY2xvc2VkKGYiVGhlIE9sbGFtYSBDbG91ZCByZXF1ZXN0IGZhaWxlZCBvciB0aW1lZCBvdXQ6IHtleGN9IikKZXhjZXB0IGpzb24uSlNPTkRlY29kZUVycm9yIGFzIGV4YzoKICAgIGZhaWxfY2xvc2VkKGYiVGhlIE9sbGFtYSBDbG91ZCByZXNwb25zZSB3YXMgbm90IHZhbGlkIEpTT046IHtleGN9IikKCnRyeToKICAgIGNvbnRlbnQgPSBib2R5WyJjaG9pY2VzIl1bMF1bIm1lc3NhZ2UiXVsiY29udGVudCJdCmV4Y2VwdCAoS2V5RXJyb3IsIEluZGV4RXJyb3IsIFR5cGVFcnJvcikgYXMgZXhjOgogICAgZmFpbF9jbG9zZWQoZiJUaGUgT2xsYW1hIENsb3VkIHJlc3BvbnNlIGRpZCBub3QgaGF2ZSB0aGUgZXhwZWN0ZWQgc2hhcGU6IHtleGN9IikKCnRyeToKICAgIHZlcmRpY3QgPSBqc29uLmxvYWRzKGNvbnRlbnQpCmV4Y2VwdCBqc29uLkpTT05EZWNvZGVFcnJvciBhcyBleGM6CiAgICBmYWlsX2Nsb3NlZChmIlRoZSBtb2RlbCdzIHJlc3BvbnNlIGJvZHkgd2FzIG5vdCBwYXJzZWFibGUgSlNPTjoge2V4Y30iKQoKaWYgbm90IGlzaW5zdGFuY2UodmVyZGljdCwgZGljdCkgb3IgdmVyZGljdC5nZXQoImFsaWduZWQiKSBpcyBub3QgVHJ1ZToKICAgIHJlYXNvbmluZyA9IHZlcmRpY3QuZ2V0KCJyZWFzb25pbmciKSBpZiBpc2luc3RhbmNlKHZlcmRpY3QsIGRpY3QpIGVsc2UgTm9uZQogICAgZmFpbF9jbG9zZWQoCiAgICAgICAgcmVhc29uaW5nCiAgICAgICAgb3IgIlRoZSBtb2RlbCBqdWRnZWQgdGhlIGRpZmYgbm90IGFsaWduZWQgd2l0aCBDTEFVREUubWQsICIKICAgICAgICAib3IgcmV0dXJuZWQgYW4gdW5leHBlY3RlZC9hbWJpZ3VvdXMgdmVyZGljdC4iCiAgICApCgpyZWFzb25pbmcgPSB2ZXJkaWN0LmdldCgicmVhc29uaW5nIiwgIk5vIHJlYXNvbmluZyBwcm92aWRlZC4iKQoKd2l0aCBvcGVuKG9zLmVudmlyb25bIkdJVEhVQl9PVVRQVVQiXSwgImEiKSBhcyBmOgogICAgZi53cml0ZSgiYWxpZ25lZD10cnVlXG4iKQogICAgZi53cml0ZSgicmVhc29uaW5nPDxFT0ZcbiIpCiAgICBmLndyaXRlKHN0cihyZWFzb25pbmcpICsgIlxuIikKICAgIGYud3JpdGUoIkVPRlxuIikKCnByaW50KGYiQUxJR05FRDoge3JlYXNvbmluZ30iKQo=" | base64 -d > /tmp/alignment_check.py
+
+          python3 /tmp/alignment_check.py
+
+      - name: Approve PR
+        if: steps.poll-checks.outputs.checks_green == 'true' && steps.alignment.outputs.aligned == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          gh pr review "${{ github.event.pull_request.number }}" \
+            --approve \
+            --body "${{ steps.alignment.outputs.reasoning }}"
+
+      - name: Update PR branch with main (best-effort)
+        id: update-branch
+        if: steps.poll-checks.outputs.checks_green == 'true' && steps.alignment.outputs.aligned == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -uo pipefail
+
+          # Branch protection's `strict` mode (if enabled) requires the PR
+          # branch be up to date with main before merging. This call can
+          # legitimately no-op/error if it's already up to date -- that's
+          # fine, don't fail the job over it.
+          http_status="$(gh api "repos/${REPO}/pulls/${PR_NUMBER}/update-branch" -X PUT \
+            --silent -o /tmp/update-branch.json -w '%{http_code}' 2>/tmp/update-branch.err || true)"
+
+          echo "update-branch HTTP status: ${http_status:-unknown}"
+
+          if [[ "$http_status" == "202" ]]; then
+            echo "updated=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "updated=false" >> "$GITHUB_OUTPUT"
+            cat /tmp/update-branch.err 2>/dev/null || true
+          fi
+
+      - name: Re-poll checks after branch update
+        if: steps.poll-checks.outputs.checks_green == 'true' && steps.alignment.outputs.aligned == 'true' && steps.update-branch.outputs.updated == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -uo pipefail
+
+          # The update-branch call above creates a new merge commit on the
+          # PR branch, so re-confirm required checks re-settle to green on
+          # that new commit before merging. Shorter timeout than the
+          # initial poll -- this is just re-confirming, not starting from
+          # scratch.
+          required_contexts="$(gh api "repos/${REPO}/branches/main/protection" --jq '.required_status_checks.contexts[]')"
+
+          # Resolve the new head sha after the update-branch merge commit.
+          new_head_sha="$(gh api "repos/${REPO}/pulls/${PR_NUMBER}" --jq '.head.sha')"
+
+          deadline=$(( $(date +%s) + 10*60 ))
+
+          while true; do
+            check_runs_json="$(gh api --paginate "repos/${REPO}/commits/${new_head_sha}/check-runs" --jq '.check_runs')"
+
+            all_green=true
+            failed=false
+
+            while IFS= read -r context; do
+              [[ -z "$context" ]] && continue
+
+              conclusion="$(echo "$check_runs_json" | python3 -c "import json, sys; runs = json.load(sys.stdin); name = sys.argv[1]; matches = [r for r in runs if r.get('name') == name]; matches.sort(key=lambda r: r.get('started_at') or ''); print((matches[-1].get('conclusion') or '') if matches else '')" "$context")"
+
+              if [[ "$conclusion" == "failure" || "$conclusion" == "cancelled" || "$conclusion" == "timed_out" || "$conclusion" == "action_required" ]]; then
+                echo "Required check '${context}' concluded '${conclusion}' after branch update -- not proceeding."
+                failed=true
+                break
+              fi
+
+              if [[ "$conclusion" != "success" ]]; then
+                all_green=false
+              fi
+            done <<< "$required_contexts"
+
+            if $failed; then
+              echo "::error::Required checks failed after branch update; not merging."
+              exit 1
+            fi
+
+            if $all_green; then
+              echo "All required checks re-confirmed green after branch update."
+              exit 0
+            fi
+
+            if (( $(date +%s) >= deadline )); then
+              echo "::error::Timed out re-confirming checks after branch update; not merging."
+              exit 1
+            fi
+
+            sleep 30
+          done
+
+      - name: Squash-merge PR
+        if: steps.poll-checks.outputs.checks_green == 'true' && steps.alignment.outputs.aligned == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          gh pr merge "${{ github.event.pull_request.number }}" --squash --delete-branch
+
+      - name: Comment explaining why this PR was not auto-merged
+        if: steps.poll-checks.outputs.checks_green == 'true' && steps.alignment.outputs.aligned != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh pr comment "${{ github.event.pull_request.number }}" \
+            --body "Auto-approve bot: this PR was not auto-merged -- ${{ steps.alignment.outputs.reasoning }}. Checks are green; a human should review the design-alignment concern above."
