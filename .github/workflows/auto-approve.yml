@@ -1,109 +1,83 @@
 name: Auto-approve
 
-# Auto-approves and squash-merges PRs authored by a small allowlist of
-# trusted humans (gr3enarr0w) once (a) every required
-# branch-protection status check on the PR's head commit is green, and (b)
-# an LLM call to an Ollama Cloud (OpenAI-compatible) endpoint judges the
-# PR's diff as aligned with this repo's locked design constraints in
-# CLAUDE.md. If either condition fails, no merge action is taken: an
-# unlisted author means the workflow does nothing at all, and a
-# checks-green-but-misaligned PR gets a comment explaining the concern and
-# is left for a human to review and merge manually.
+# Gates auto-merge of PRs authored by a small allowlist of trusted humans
+# (gr3enarr0w) behind an LLM design-alignment check, without
+# using a GitHub App or posting any PR review.
 #
-# This is a belt-and-suspenders layer on top of required status checks and
-# CodeRabbit review, not a replacement for either -- it only ever acts on
-# PRs from the two people already trusted to push directly to this repo,
-# and only after independently re-confirming checks are green.
+# This job's own name, "design-alignment", is a required status check on
+# main's branch protection. That means the job's pass/fail outcome *is*
+# the check GitHub blocks merging on -- there is no separate polling step
+# that reads other checks' state and no PR-review-based approval concept
+# here at all. Concretely:
+#   - If the diff is judged aligned with CLAUDE.md, this job succeeds
+#     (green "design-alignment" check) and calls `gh pr merge --auto`,
+#     which enables GitHub's own native auto-merge. GitHub then completes
+#     the merge itself once every required context -- CodeRabbit, the
+#     full test matrix, and this now-green design-alignment check -- is
+#     green, using GitHub's own correct built-in logic. This workflow
+#     does not need to poll or wait for that to happen.
+#   - If the diff is judged not aligned, or the alignment pipeline itself
+#     errors out for any reason (missing secret, bad response shape,
+#     network failure, etc. -- fail-closed throughout), this job posts an
+#     explanatory PR comment and then exits non-zero. That failing
+#     required check blocks the default merge path.
+#
+# An older version of this workflow tried to have a dedicated GitHub App
+# post a PR *review* so it would count as branch protection's required
+# "different-account approval." That does not work on a personal-account
+# repo like this one: GitHub never treats an installed App as a
+# "collaborator with write permission" for required-review-counting
+# purposes there, so the App's review posted successfully but never
+# satisfied required_approving_review_count. Rather than route around
+# that with a second personal account, this repo's branch protection was
+# changed instead: required_approving_review_count is now 0 (this check,
+# plus CodeRabbit, plus the test suite, ARE the review layer for this
+# solo-maintainer repo) and enforce_admins is false, so the repo's actual
+# admin (gr3enarr0w) can still manually override and merge via
+# `gh pr merge --admin` if they disagree with this job's verdict. Both of
+# those branch-protection changes are already live; this workflow does
+# not configure them.
 #
 # Uses pull_request (not pull_request_target) throughout: both allowlisted
 # authors push same-repo branches, never forks, so there is no
 # secret-exposure motivation for the target-branch-context variant here.
 #
-# This workflow depends on infrastructure that does not exist yet and will
-# not fire correctly until a human provisions it:
-#   Repo secrets (Settings > Secrets and variables > Actions > Secrets):
-#     - AUTO_APPROVE_APP_ID           GitHub App ID for a dedicated,
-#                                     narrowly-scoped "auto-approve bot"
-#                                     App installed on this repo. Needed
-#                                     because the default GITHUB_TOKEN
-#                                     cannot approve a PR opened by the
-#                                     same workflow's actor in all cases,
-#                                     and cannot trigger downstream
-#                                     required-check runs on the resulting
-#                                     merge commit the way a distinct App
-#                                     identity can. The App must also be
-#                                     granted "Administration: Read"
-#                                     repository permission: reading
-#                                     branch protection's required status
-#                                     check list (GET
-#                                     /repos/{owner}/{repo}/branches/{branch}/protection)
-#                                     requires that permission per GitHub's
-#                                     REST API docs, and it is *not*
-#                                     grantable to GITHUB_TOKEN -- there is
-#                                     no "administration" key in a
-#                                     workflow's `permissions:` block (see
-#                                     the full enumerated list in "Workflow
-#                                     syntax for GitHub Actions"). That is
-#                                     why the two steps below that read
-#                                     branch protection use the App
-#                                     installation token instead of
-#                                     `github.token`, and why that token is
-#                                     minted before those steps rather than
-#                                     only just before the approve/merge
-#                                     steps.
-#     - AUTO_APPROVE_APP_PRIVATE_KEY  Private key (PEM) for that App.
-#     - OLLAMA_API_KEY                API key for an Ollama Cloud account.
-#     - OLLAMA_BASE_URL               Base URL for the Ollama Cloud
-#                                     OpenAI-compatible endpoint (the
-#                                     workflow POSTs to
-#                                     "$OLLAMA_BASE_URL/v1/chat/completions").
-#   Repo variables (Settings > Secrets and variables > Actions > Variables):
-#     - OLLAMA_MODEL                  Model name to request, e.g.
-#                                     "gpt-oss:120b" or whatever the human
-#                                     provisions on their Ollama Cloud
-#                                     account -- deliberately not
-#                                     hardcoded here since that choice is
-#                                     environment-specific and will change
-#                                     over time.
-# Until all five of the above exist, this workflow's design-alignment step
-# will simply fail its HTTP call and the job will fail closed (comment
-# posted, no merge) -- which is the expected, safe behavior in the
-# meantime, not a bug.
+# Required secrets (Settings > Secrets and variables > Actions > Secrets),
+# already configured on this repo:
+#   - OLLAMA_API_KEY    API key for an Ollama Cloud account.
+#   - OLLAMA_BASE_URL   Base URL for the Ollama Cloud OpenAI-compatible
+#                       endpoint (this workflow POSTs to
+#                       "$OLLAMA_BASE_URL/v1/chat/completions").
+# Required repo variable (Settings > Secrets and variables > Actions >
+# Variables), already configured on this repo:
+#   - OLLAMA_MODEL      Model name to request, e.g. "gpt-oss:120b" or
+#                       whatever is provisioned on the Ollama Cloud
+#                       account -- deliberately not hardcoded here since
+#                       that choice is environment-specific and will
+#                       change over time.
 
 on:
   pull_request:
     types: [opened, synchronize, reopened]
     branches: [main]
 
-# NOTE: branch protection's required-status-check list can only be read by
-# a caller with repository "Administration: Read" access (per GitHub's
-# REST API docs for "Get branch protection"). "administration" is not a
-# valid key in this `permissions:` block -- the full set of scopes
-# GITHUB_TOKEN can ever hold is enumerated in GitHub's "Workflow syntax
-# for GitHub Actions" docs, and administration is not among them, by
-# design (it is deliberately excluded from the ephemeral Actions token).
-# So this block intentionally does NOT list `administration: read`; it
-# would either be rejected as an unrecognized key or silently do nothing.
-# The steps that need to read branch protection use the GitHub App
-# installation token (minted early in the job) instead of github.token,
-# since GitHub Apps -- unlike GITHUB_TOKEN -- can be granted
-# Administration permission.
 permissions:
   contents: write
   pull-requests: write
-  checks: read
 
 concurrency:
   group: auto-approve-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
-  auto-approve:
-    name: auto-approve
+  design-alignment:
+    name: design-alignment
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 10
     # Trusted-author allowlist gate. Anything else: this job does not run
-    # at all -- no approval, no comment, nothing observable.
+    # at all -- no check, no comment, nothing observable. (This is
+    # unrelated to the removed review-approval concept above -- it's
+    # purely about who gets this automated gate applied to their PRs.)
     if: contains(fromJSON('["gr3enarr0w"]'), github.event.pull_request.user.login)
     steps:
       - name: Checkout PR head
@@ -112,97 +86,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
 
-      # Minted here, before the first branch-protection read, rather than
-      # just before the approve/merge steps: reading branch protection's
-      # required-status-check list requires "Administration: Read", which
-      # only a GitHub App/PAT can hold -- GITHUB_TOKEN cannot, so both
-      # "Poll required status checks to green" and "Re-poll checks after
-      # branch update" below need this token too, not just github.token.
-      - name: Mint GitHub App installation token
-        id: app-token
-        uses: actions/create-github-app-token@v1
-        with:
-          app-id: ${{ secrets.AUTO_APPROVE_APP_ID }}
-          private-key: ${{ secrets.AUTO_APPROVE_APP_PRIVATE_KEY }}
-
-      - name: Poll required status checks to green
-        id: poll-checks
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          REPO: ${{ github.repository }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          set -uo pipefail
-
-          # Read the actual required contexts live, every run -- never
-          # hardcode the "test (<subpackage>)" job-name list, since it can
-          # change as subpackages are added/removed from the test matrix.
-          required_contexts="$(gh api "repos/${REPO}/branches/main/protection" --jq '.required_status_checks.contexts[]')"
-
-          if [[ -z "$required_contexts" ]]; then
-            echo "::error::Could not read required_status_checks.contexts from branch protection; refusing to proceed."
-            echo "checks_green=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          echo "Required contexts:"
-          echo "$required_contexts"
-
-          deadline=$(( $(date +%s) + 20*60 ))
-
-          while true; do
-            # Paginate: ~12 required checks can exceed a single page's
-            # default page size.
-            check_runs_json="$(gh api --paginate "repos/${REPO}/commits/${HEAD_SHA}/check-runs" --jq '.check_runs')"
-
-            all_green=true
-            failed=false
-
-            while IFS= read -r context; do
-              [[ -z "$context" ]] && continue
-
-              # Conclusion of the most recently-started run for this
-              # context name. Single-line python3 -c deliberately -- no
-              # embedded newlines, so this is immune to both YAML
-              # block-scalar indentation rules and Python's own
-              # top-level-indentation rules, neither of which tolerate a
-              # heredoc/multi-line string indented to match this file's
-              # surrounding bash style.
-              conclusion="$(echo "$check_runs_json" | python3 -c "import json, sys; runs = json.load(sys.stdin); name = sys.argv[1]; matches = [r for r in runs if r.get('name') == name]; matches.sort(key=lambda r: r.get('started_at') or ''); print((matches[-1].get('conclusion') or '') if matches else '')" "$context")"
-
-              if [[ "$conclusion" == "failure" || "$conclusion" == "cancelled" || "$conclusion" == "timed_out" || "$conclusion" == "action_required" ]]; then
-                echo "Required check '${context}' concluded '${conclusion}' -- not proceeding."
-                failed=true
-                break
-              fi
-
-              if [[ "$conclusion" != "success" ]]; then
-                all_green=false
-              fi
-            done <<< "$required_contexts"
-
-            if $failed; then
-              echo "checks_green=false" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-
-            if $all_green; then
-              echo "All required checks are green."
-              echo "checks_green=true" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-
-            if (( $(date +%s) >= deadline )); then
-              echo "Timed out after 20 minutes waiting for required checks; not proceeding."
-              echo "checks_green=false" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-
-            sleep 30
-          done
-
       - name: Fetch PR diff
-        if: steps.poll-checks.outputs.checks_green == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -211,7 +95,6 @@ jobs:
 
       - name: Design-alignment check via Ollama Cloud
         id: alignment
-        if: steps.poll-checks.outputs.checks_green == 'true'
         env:
           OLLAMA_BASE_URL: ${{ secrets.OLLAMA_BASE_URL }}
           OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
@@ -367,116 +250,20 @@ jobs:
 
           python3 /tmp/alignment_check.py
 
-      - name: Approve PR
-        if: steps.poll-checks.outputs.checks_green == 'true' && steps.alignment.outputs.aligned == 'true'
+      - name: Merge if aligned
+        if: steps.alignment.outputs.aligned == 'true'
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh pr review "${{ github.event.pull_request.number }}" \
-            --approve \
-            --body "${{ steps.alignment.outputs.reasoning }}"
+          gh pr merge "${{ github.event.pull_request.number }}" --auto --squash --delete-branch
 
-      - name: Update PR branch with main (best-effort)
-        id: update-branch
-        if: steps.poll-checks.outputs.checks_green == 'true' && steps.alignment.outputs.aligned == 'true'
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          REPO: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: |
-          set -uo pipefail
-
-          # Branch protection's `strict` mode (if enabled) requires the PR
-          # branch be up to date with main before merging. This call can
-          # legitimately no-op/error if it's already up to date -- that's
-          # fine, don't fail the job over it.
-          http_status="$(gh api "repos/${REPO}/pulls/${PR_NUMBER}/update-branch" -X PUT \
-            --silent -o /tmp/update-branch.json -w '%{http_code}' 2>/tmp/update-branch.err || true)"
-
-          echo "update-branch HTTP status: ${http_status:-unknown}"
-
-          if [[ "$http_status" == "202" ]]; then
-            echo "updated=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "updated=false" >> "$GITHUB_OUTPUT"
-            cat /tmp/update-branch.err 2>/dev/null || true
-          fi
-
-      - name: Re-poll checks after branch update
-        if: steps.poll-checks.outputs.checks_green == 'true' && steps.alignment.outputs.aligned == 'true' && steps.update-branch.outputs.updated == 'true'
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          REPO: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: |
-          set -uo pipefail
-
-          # The update-branch call above creates a new merge commit on the
-          # PR branch, so re-confirm required checks re-settle to green on
-          # that new commit before merging. Shorter timeout than the
-          # initial poll -- this is just re-confirming, not starting from
-          # scratch.
-          required_contexts="$(gh api "repos/${REPO}/branches/main/protection" --jq '.required_status_checks.contexts[]')"
-
-          # Resolve the new head sha after the update-branch merge commit.
-          new_head_sha="$(gh api "repos/${REPO}/pulls/${PR_NUMBER}" --jq '.head.sha')"
-
-          deadline=$(( $(date +%s) + 10*60 ))
-
-          while true; do
-            check_runs_json="$(gh api --paginate "repos/${REPO}/commits/${new_head_sha}/check-runs" --jq '.check_runs')"
-
-            all_green=true
-            failed=false
-
-            while IFS= read -r context; do
-              [[ -z "$context" ]] && continue
-
-              conclusion="$(echo "$check_runs_json" | python3 -c "import json, sys; runs = json.load(sys.stdin); name = sys.argv[1]; matches = [r for r in runs if r.get('name') == name]; matches.sort(key=lambda r: r.get('started_at') or ''); print((matches[-1].get('conclusion') or '') if matches else '')" "$context")"
-
-              if [[ "$conclusion" == "failure" || "$conclusion" == "cancelled" || "$conclusion" == "timed_out" || "$conclusion" == "action_required" ]]; then
-                echo "Required check '${context}' concluded '${conclusion}' after branch update -- not proceeding."
-                failed=true
-                break
-              fi
-
-              if [[ "$conclusion" != "success" ]]; then
-                all_green=false
-              fi
-            done <<< "$required_contexts"
-
-            if $failed; then
-              echo "::error::Required checks failed after branch update; not merging."
-              exit 1
-            fi
-
-            if $all_green; then
-              echo "All required checks re-confirmed green after branch update."
-              exit 0
-            fi
-
-            if (( $(date +%s) >= deadline )); then
-              echo "::error::Timed out re-confirming checks after branch update; not merging."
-              exit 1
-            fi
-
-            sleep 30
-          done
-
-      - name: Squash-merge PR
-        if: steps.poll-checks.outputs.checks_green == 'true' && steps.alignment.outputs.aligned == 'true'
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-        run: |
-          set -euo pipefail
-          gh pr merge "${{ github.event.pull_request.number }}" --squash --delete-branch
-
-      - name: Comment explaining why this PR was not auto-merged
-        if: steps.poll-checks.outputs.checks_green == 'true' && steps.alignment.outputs.aligned != 'true'
+      - name: Comment and fail if not aligned
+        if: steps.alignment.outputs.aligned != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           gh pr comment "${{ github.event.pull_request.number }}" \
-            --body "Auto-approve bot: this PR was not auto-merged -- ${{ steps.alignment.outputs.reasoning }}. Checks are green; a human should review the design-alignment concern above."
+            --body "Design-alignment check: ${{ steps.alignment.outputs.reasoning }}. This PR was NOT auto-merged. If you disagree with this verdict, override manually: \`gh pr merge <PR> --admin --squash --delete-branch\` (or the equivalent through the GitHub UI's admin merge option)."
+          exit 1
