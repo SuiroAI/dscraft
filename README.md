@@ -1,6 +1,6 @@
 # DSCraft
 
-A unified, MIT-licensed, local-first ML tooling platform spanning data curation, tabular AutoML, exploratory data analysis, time-series forecasting, graph ML, computer vision, LLM fine-tuning, LLM/agent red-teaming, and agent/RAG benchmark evaluation.
+A unified, Apache-2.0-licensed, local-first ML tooling platform spanning data curation, tabular AutoML, exploratory data analysis, time-series forecasting, graph ML, computer vision, LLM fine-tuning, LLM/agent red-teaming, and agent/RAG benchmark evaluation.
 
 See [`DSCraft_Unified_Architecture.md`](./DSCraft_Unified_Architecture.md) for the full locked v1 architecture spec, and [`CLAUDE.md`](./CLAUDE.md) for repo conventions and the module dependency graph.
 

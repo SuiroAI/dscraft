@@ -28,7 +28,7 @@ confidence, not against a different group's.
 This module is a from-scratch NumPy implementation. It never imports or
 wraps ``cleanlab`` (AGPL-3.0) -- see CLAUDE.md's licensing policy (LazyRed
 Part 5 / "Licensing policy (LazyIsolate)"): AGPL/GPL code is never an
-acceptable runtime dependency of this 100%-MIT platform, and confident-joint
+acceptable runtime dependency of this 100%-Apache-2.0 platform, and confident-joint
 label-error detection is a public algorithm (not cleanlab-proprietary code),
 so this is a clean, independent implementation of that public algorithm
 rather than a derivative of any specific package.

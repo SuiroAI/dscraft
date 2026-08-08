@@ -1,6 +1,6 @@
 # dscraft
 
-A unified, MIT-licensed, local-first ML tooling platform: tabular AutoML,
+A unified, Apache-2.0-licensed, local-first ML tooling platform: tabular AutoML,
 data cleaning, time-series forecasting, graph ML, computer vision, LLM
 fine-tuning, LLM/agent red-teaming, and agent/RAG benchmark eval, all
 installed and imported as one real Python package — the way numpy or

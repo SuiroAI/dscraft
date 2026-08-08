@@ -1,4 +1,4 @@
-"""DSCraft: a unified, MIT-licensed, local-first ML tooling platform.
+"""DSCraft: a unified, Apache-2.0-licensed, local-first ML tooling platform.
 
 This is the top-level ``dscraft`` package. Its subpackages (``dscraft.core``,
 and eventually ``dscraft.automl``, ``dscraft.clean``, ``dscraft.forecast``,

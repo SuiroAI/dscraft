@@ -8,7 +8,7 @@ This repository contains real source code under `packages/dscraft/` — one real
 
 ## What this document is
 
-`DSCraft_Unified_Architecture.md` is the locked v1 architecture spec for **DSCraft**, a unified, MIT-licensed, local-first ML tooling platform (tabular AutoML, data cleaning, time-series forecasting, graph ML, computer vision, LLM fine-tuning, LLM/agent red-teaming, agent/RAG benchmark eval). It was synthesized from nine independent module research docs plus a stakeholder scope-lock Q&A, and its decisions marked "Locked" in Part 4 should be treated as settled — do not silently re-litigate them when writing code or docs. Read the full document before implementing any module; the summary below only orients you.
+`DSCraft_Unified_Architecture.md` is the locked v1 architecture spec for **DSCraft**, a unified, Apache-2.0-licensed, local-first ML tooling platform (tabular AutoML, data cleaning, time-series forecasting, graph ML, computer vision, LLM fine-tuning, LLM/agent red-teaming, agent/RAG benchmark eval). It was synthesized from nine independent module research docs plus a stakeholder scope-lock Q&A, and its decisions marked "Locked" in Part 4 should be treated as settled — do not silently re-litigate them when writing code or docs. Read the full document before implementing any module; the summary below only orients you.
 
 **Post-v1 direction (not a v1 requirement):** DSCraft is meant to eventually expose an MCP server and an installable Skill so Hermes and other AI agent tools can consume its modules as callable tools, not just as a Python library. This is a generic library capability, not a bespoke integration for one consumer. See Part 6 of the architecture doc. Don't shape any module's v1 public API around this prematurely — just keep APIs clean enough to wrap later.
 
@@ -38,7 +38,7 @@ This repository contains real source code under `packages/dscraft/` — one real
 - AGPL/GPL code that would itself be the network-facing service → full replacement or licensing negotiation, no subprocess workaround applies.
 - Source-available non-compete licenses (e.g., PyCaret's FSL-1.1-MIT) → clean-room reimplementation of the API surface only, never copy code.
 - Non-commercial-licensed weights/data (e.g., CC BY-NC) → isolate behind an explicit opt-in flag (`accept_restricted_licenses=True`), per the Tier 1/Tier 2 model allowlist below.
-- **Platform code target: 100% MIT.** External model checkpoints are classified per module as Tier 1 (permissive, e.g., Apache-2.0/MIT — auto-usable) or Tier 2 (restricted, e.g., CC BY-NC — opt-in-gated). Maintaining and re-verifying these allowlists is an ongoing task, not one-time.
+- **Platform code target: 100% Apache-2.0.** External model checkpoints are classified per module as Tier 1 (permissive, e.g., Apache-2.0/MIT — auto-usable) or Tier 2 (restricted, e.g., CC BY-NC — opt-in-gated). Maintaining and re-verifying these allowlists is an ongoing task, not one-time.
 
 ## The ten subpackages of the single `dscraft` package (all "Lazy*" names are internal codenames, not user-facing)
 

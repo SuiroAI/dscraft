@@ -5,13 +5,13 @@ build-backend = "hatchling.build"
 [project]
 name = "dscraft"
 version = "0.2.1"
-description = "DSCraft: a unified, MIT-licensed, local-first ML tooling platform -- tabular AutoML, data cleaning, time-series forecasting, graph ML, computer vision, LLM fine-tuning, LLM/agent red-teaming, and agent/RAG benchmark eval, all as installable extras of one package. `core` is the thin shared substrate (data-tier conventions, OTel GenAI telemetry helpers, license-isolation policy, shared sandbox executor) used by every other dscraft subpackage."
+description = "DSCraft: a unified, Apache-2.0-licensed, local-first ML tooling platform -- tabular AutoML, data cleaning, time-series forecasting, graph ML, computer vision, LLM fine-tuning, LLM/agent red-teaming, and agent/RAG benchmark eval, all as installable extras of one package. `core` is the thin shared substrate (data-tier conventions, OTel GenAI telemetry helpers, license-isolation policy, shared sandbox executor) used by every other dscraft subpackage."
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "MIT" }
+license = "Apache-2.0"
 authors = [{ name = "DSCraft" }]
 classifiers = [
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3 :: Only",
 ]
