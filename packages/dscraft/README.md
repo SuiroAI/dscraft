@@ -29,7 +29,7 @@ what's here today and how to install/run it.
 | Subpackage | Extra | What it does |
 |---|---|---|
 | [`dscraft.core`](#dscraftcore) | *(base install)* | Shared substrate: three-tier data conventions, OTel GenAI telemetry helpers, license-isolation policy, shared sandbox executor. |
-| [`dscraft.automl`](#dscraftautoml) | `automl` (+ `automl-onnx`) | Clean-room tabular AutoML — `.compile()` fuses a fitted `sklearn.pipeline.Pipeline` into one portable ONNX graph via `skl2onnx`; `build_model`/`build_clusterer`/`build_resampler` add selectable XGBoost/LightGBM/CatBoost, HDBSCAN, and imbalanced-learn backends. |
+| [`dscraft.automl`](#dscraftautoml) | `automl` (+ `automl-onnx`) | First-party tabular AutoML — `.compile()` fuses a fitted `sklearn.pipeline.Pipeline` into one portable ONNX graph via `skl2onnx`; `build_model` offers first-party linear/logistic, gradient-boosting, and random-forest/extra-trees backends (built from scratch on numpy, no boosting library); `build_resampler` adds first-party random/SMOTE/borderline-SMOTE over-sampling and random under-sampling; `build_clusterer` adds an HDBSCAN backend. |
 | [`dscraft.clean`](#dscraftclean) | `clean` | Data-quality firewall — the composed `Sanitizer` entrypoint (DeCoLe label-error detection, train/test contamination auditing, Dataset Integrity Score), plus lower-level ONNX Runtime (PyTorch-free) text *and* image embeddings feeding cosine-similarity near-duplicate detection. |
 | [`dscraft.forecast`](#dscraftforecast) | `forecast` | Classical statistical forecasting (13 `statsforecast` models: AutoARIMA/AutoETS/AutoCES/AutoTheta autofits, simple baselines, Croston) over a Tier-1 Arrow-backed pipeline, `utilsforecast`-scored backtesting, and standalone STL/MSTL (+ Box-Cox) decomposition. |
 | [`dscraft.graph`](#dscraftgraph) | `graph` | Sparse graph ML — a concrete Tier-2 COO↔CSR/CSC tensor adapter (PyG↔SciPy) plus a minimal GCN forward pass. |
@@ -114,26 +114,49 @@ scikit-learn install required at serving time. Base runtime deps
 lazily imported) install via the separate `automl-onnx` extra.
 
 `dscraft.automl.build_model(name, task, **kwargs)` builds an unfitted,
-sklearn-compatible gradient-boosted-tree estimator from a caller-selected
-backend -- XGBoost, LightGBM, or CatBoost, all three equally supported per
-this project's multi-backend design principle (none is a "default").
-`SUPPORTED_CLASSIFIERS`/`SUPPORTED_REGRESSORS` are the name -> class
-allowlists `build_model` dispatches through, mirroring
-`dscraft.forecast`'s `SUPPORTED_MODELS` pattern. All three libraries are
-base runtime deps of the `automl` extra (not a separate extra).
+sklearn-compatible estimator from a caller-selected backend, all equally
+supported per this project's multi-backend design principle (none is a
+"default"). `SUPPORTED_CLASSIFIERS`/`SUPPORTED_REGRESSORS` are the name ->
+class allowlists `build_model` dispatches through, mirroring
+`dscraft.forecast`'s `SUPPORTED_MODELS` pattern. Every backend is a
+**first-party** implementation built from scratch on numpy (via
+`dscraft.automl._tree`/`_primitives`):
+
+- `DSLinear` — OLS/ridge/lasso/elastic-net regression (`_linear.py`)
+- `DSLogistic` — binary IRLS / multiclass one-vs-rest logistic regression (`_linear.py`)
+- `DSBoost` — second-order gradient-boosted decision trees for regression and
+  binary/multiclass classification (`_boosting.py`)
+- `DSRandomForest` / `DSExtraTrees` — random forests and
+  extremely-randomized-trees ensembles for both tasks (`_forest.py`)
+
+The third-party gradient-boosted-tree backends (XGBoost/LightGBM/CatBoost)
+this module originally wrapped have been **removed** — their capability is
+now the first-party `DSBoost` backend, so no boosting library is a
+dependency of this package. This is part of the first-party automl/eda
+rebuild (see `docs/decisions/2026-10-first-party-automl-eda-rebuild.md`),
+which makes the modeling, boosting, and techniques our own end to end.
 
 `dscraft.automl.build_clusterer(name, **kwargs)` builds an unfitted,
-sklearn-compatible clustering estimator -- currently HDBSCAN, via
-scikit-learn's own built-in `sklearn.cluster.HDBSCAN` (no new dependency
-needed), exposed through `SUPPORTED_CLUSTERERS`. This is an independent,
-unsupervised capability -- it does not require the supervised model
-allowlist above.
+sklearn-compatible clustering estimator from a caller-selected backend,
+exposed through `SUPPORTED_CLUSTERERS`. All are **first-party**
+implementations built from scratch on numpy (`dscraft.automl._clustering`),
+spanning the major clustering styles: `DSKMeans` (centroid-based),
+`DSDBSCAN` (density-based), `DSAgglomerative` (hierarchical agglomerative,
+ward/complete/average/single linkage), and `DSHDBSCAN` (hierarchical
+density-based, HDBSCAN*). The `sklearn.cluster.HDBSCAN` backend this used to
+wrap was replaced by the first-party `DSHDBSCAN` as part of the first-party
+automl/eda rebuild (the legacy `"HDBSCAN"` name is kept as an alias). This
+is an independent, unsupervised capability -- it does not require the
+supervised model allowlist above.
 
-`dscraft.automl.build_resampler(name, **kwargs)` builds an unfitted
-`imbalanced-learn` resampler -- `RandomOverSampler`, `SMOTE`, or
-`RandomUnderSampler`, exposed through `SUPPORTED_RESAMPLERS` -- for
-rebalancing a skewed classification training set ahead of the classifier
-path above. `imbalanced-learn` is a base runtime dep of the `automl`
+`dscraft.automl.build_resampler(name, **kwargs)` builds an unfitted,
+**first-party** resampler exposing `fit_resample(X, y)` --
+`RandomOverSampler`, `SMOTE`, `BorderlineSMOTE`, or `RandomUnderSampler`,
+exposed through `SUPPORTED_RESAMPLERS` -- for rebalancing a skewed
+classification training set ahead of the classifier path above. These are
+built from scratch on numpy (`dscraft.automl._resampling`); the third-party
+`imbalanced-learn` backend this used to wrap was removed by the first-party
+automl/eda rebuild, so no resampling library is a dependency of the `automl`
 extra.
 
 ## `dscraft.clean`
@@ -293,10 +316,14 @@ extra heavy runtime deps beyond `dscraft.core` itself — install via the
 `LazyEDA` is the single entry point over four independently-built pieces:
 a lazy-Polars profiling `engine` (schema + per-column null counts + row
 count, computed without materializing a source's full data), `sketches`
-(HyperLogLog cardinality and KLL quantile estimation, via the Apache
-Software Foundation's `datasketches` library), `associations` (a mixed
+(first-party HyperLogLog cardinality and KLL quantile estimation, built
+from scratch on numpy in `_hll.py`/`_kll.py` -- the Apache `datasketches`
+dependency this used to wrap was removed by the first-party automl/eda
+rebuild), `associations` (a mixed
 continuous/categorical/mixed-type pairwise correlation/association-matrix
-suite built on SciPy), and a `report` renderer that turns already-
+suite -- Pearson/Spearman/Kendall, Cramér's V, Theil's U, correlation
+ratio -- all first-party on numpy, `_stats.py` + `associations.py`, no
+SciPy), and a `report` renderer that turns already-
 aggregated summaries into one self-contained, offline-friendly HTML/Canvas
 document — no external CDN references, no charting library, just inlined
 CSS/JS.
@@ -323,10 +350,19 @@ the per-column `KLLResult`/`HLLResult` sketches, and the
 `AssociationMatrixResult` — as inspectable attributes, not just an
 `.export()` side effect, matching this platform's convention (see
 `dscraft.clean`'s `SanitizerReport`) of returning programmatically usable
-result objects. Outlier/anomaly detection and time-series-specific EDA
-(despite `dscraft.forecast` being an obvious future consumer) are out of
-scope for this pass — see `DSCraft_Unified_Architecture.md`'s LazyEDA
-module entry for what's deferred. Install via the `eda` extra.
+result objects. The first-party automl/eda rebuild added breadth to the
+profile: every numeric column gets a `NumericDescriptor` (mean/var/std,
+median/MAD/IQR, skewness/kurtosis, CV) and a univariate outlier screen
+(`column_outliers`, IQR fences or robust MAD z-score); every string column
+gets a `CategoricalDescriptor` (distinct/mode/entropy); every temporal
+column gets a `TemporalDescriptor` (range, cadence, gap detection); and the
+numeric columns together get a `PCAResult` (explained-variance curve +
+effective-dimensionality readout). `dscraft.eda` also exports standalone
+`IsolationForest` (multivariate anomaly detection), `PCA`,
+`autocorrelation`, `iqr_outliers`, and `mad_outliers` for direct use.
+Install via the `eda` extra (now just polars + numpy — the former
+`datasketches`/`scipy` deps were removed when the sketch and correlation
+algorithms became first-party).
 
 For publication-quality, static, layered exploratory plots (as an
 alternative to — not a replacement for — the interactive single-file HTML

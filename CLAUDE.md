@@ -44,7 +44,7 @@ This repository contains real source code under `packages/dscraft/` — one real
 
 | Module | Status | One-line focus |
 |---|---|---|
-| AutoML | In v1 | Tabular AutoML; clean-room PyCaret-successor; streaming `partial_fit`, PSI drift detection, `.compile()` → single ONNX graph via skl2onnx |
+| AutoML | In v1 | Tabular AutoML; clean-room PyCaret-successor; **first-party model/resampler/clusterer backends** (linear/logistic, gradient boosting, random forest/extra-trees, SMOTE family, k-means/DBSCAN/agglomerative/HDBSCAN* — all from scratch on numpy, no xgboost/lightgbm/catboost/imbalanced-learn/sklearn-cluster deps; see `docs/decisions/2026-10-first-party-automl-eda-rebuild.md`); `.compile()` → single ONNX graph via skl2onnx; streaming `partial_fit`, PSI drift detection (deferred) |
 | LazyClean | In v1 | Data-quality firewall: DeCoLe label-error detection + D4 semantic dedup; ONNX Runtime embeddings (not PyTorch) to stay <100MB |
 | LazyForecast | In v1 | Classical (StatsForecast) + tree-based (MLForecast) + zero-shot TSFMs (TimesFM, Chronos-Bolt) under one Polars/Arrow pipeline; conformal prediction (MSCP/EnbPI) |
 | LazyGraph | In v1 | MPNNs (GCN/GAT/GraphSAGE) + Graph Transformers across PyG/DGL via a Universal Sparse Tensor layer; SQL-to-graph mapping; oversmoothing/oversquashing monitoring |
@@ -53,7 +53,7 @@ This repository contains real source code under `packages/dscraft/` — one real
 | LazyRed | In v1, local targets only | Red-teaming adapter over garak/DeepTeam/PyRIT/Promptfoo; offline-first; findings mapped to OWASP LLM/Agentic Top 10 + MITRE ATLAS |
 | LazyAgent | In v1, local targets only | Agent/RAG benchmark eval; bring-your-own-agent adapter; Pareto RAG optimization (accuracy/latency/cost); shares sandbox executor with LazyRed |
 | LazyEdge | Deferred (roadmap only) | Edge/microcontroller compilation — not user-facing, do not implement |
-| LazyEDA | In v1 (added post-scope-lock, a tenth capability area) | Exploratory data analysis: lazy Polars profiling engine + Apache DataSketches HLL/KLL sketches + SciPy-based association matrix + dependency-free HTML/Canvas report, behind one `LazyEDA` entry point |
+| LazyEDA | In v1 (added post-scope-lock, a tenth capability area) | Exploratory data analysis behind one `LazyEDA` entry point: lazy Polars profiling engine + **first-party HLL/KLL sketches, correlation/chi² statistics, univariate descriptors, outlier detection, temporal profiling, and PCA** (all from scratch on numpy — the former Apache DataSketches and SciPy deps were removed; see `docs/decisions/2026-10-first-party-automl-eda-rebuild.md`) + dependency-free HTML/Canvas report |
 
 For full per-module detail (algorithms, failure modes, licensing specifics) read Part 3 and Appendix A of `DSCraft_Unified_Architecture.md` directly rather than relying on the table above.
 

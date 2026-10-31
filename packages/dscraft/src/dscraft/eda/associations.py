@@ -15,25 +15,22 @@ pairwise matrix via :func:`mixed_type_association_matrix`. That function is
 deliberately **not** named ``phik_matrix`` to avoid implying algorithmic
 equivalence with the real Phik method.
 
-Formula sources (implemented from scratch except where SciPy already
-provides the exact well-known statistic directly):
+Formula sources -- every statistic here is now **first-party** (built from scratch on ``numpy``;
+the correlation/chi-squared primitives live in :mod:`dscraft.eda._stats`). The first-party
+automl/eda rebuild (see ``docs/decisions/2026-10-first-party-automl-eda-rebuild.md``) internalized
+the Pearson/Spearman/Kendall and chi-squared statistics this module previously called
+``scipy.stats`` for; Cramer's V, Theil's U, and the correlation ratio were already from-scratch:
 
-- Continuous-continuous: thin wrappers around ``scipy.stats.pearsonr``,
-  ``scipy.stats.spearmanr``, and ``scipy.stats.kendalltau`` -- see
-  :func:`continuous_correlation`. Not reimplemented; SciPy's own
-  implementations are the canonical ones.
-- Cramer's V: built from ``scipy.stats.contingency.crosstab`` (contingency
-  table) and ``scipy.stats.chi2_contingency`` (chi-squared statistic),
-  combined via the standard formula
-  ``V = sqrt(chi2 / (n * min(r - 1, c - 1)))`` -- see :func:`cramers_v`.
-  Neither ``crosstab``/``chi2_contingency`` output *is* Cramer's V; that
-  combination step is this module's own code.
-- Theil's U (uncertainty coefficient): a from-scratch Shannon-entropy
-  computation over the empirical joint/marginal distributions of the same
-  contingency table -- SciPy has no direct equivalent. See
-  :func:`theils_u`.
-- Correlation ratio (eta): a from-scratch between-group/total
-  sum-of-squares computation -- SciPy has no direct equivalent. See
+- Continuous-continuous: :func:`dscraft.eda._stats.pearsonr`/``spearmanr``/``kendalltau`` --
+  first-party implementations (Pearson via the standardized cross-product, Spearman as Pearson on
+  ranks, Kendall's tau-b over concordant/discordant pairs), with large-sample t/normal p-values.
+  See :func:`continuous_correlation`.
+- Cramer's V: built from a first-party contingency table (:func:`_contingency_table`) and the
+  first-party chi-squared statistic (:func:`dscraft.eda._stats.chi2_contingency`), combined via
+  the standard formula ``V = sqrt(chi2 / (n * min(r - 1, c - 1)))`` -- see :func:`cramers_v`.
+- Theil's U (uncertainty coefficient): a from-scratch Shannon-entropy computation over the
+  empirical joint/marginal distributions of the same contingency table. See :func:`theils_u`.
+- Correlation ratio (eta): a from-scratch between-group/total sum-of-squares computation. See
   :func:`correlation_ratio`.
 
 **NaN policy.** Every function in this module uses pairwise-complete-case
@@ -61,8 +58,8 @@ from dataclasses import dataclass, field
 from typing import Literal, Mapping, Sequence
 
 import numpy as np
-from scipy import stats
-from scipy.stats.contingency import crosstab
+
+from dscraft.eda import _stats
 
 __all__ = [
     "CorrelationResult",
@@ -76,12 +73,14 @@ __all__ = [
 ]
 
 #: The three continuous-continuous methods :func:`continuous_correlation`
-#: supports, each a direct wrapper around the like-named ``scipy.stats``
-#: function.
+#: supports, each a first-party implementation in :mod:`dscraft.eda._stats`
+#: (these replaced the like-named ``scipy.stats`` functions as part of the
+#: first-party automl/eda rebuild -- see
+#: docs/decisions/2026-10-first-party-automl-eda-rebuild.md).
 _CONTINUOUS_METHODS = {
-    "pearson": stats.pearsonr,
-    "spearman": stats.spearmanr,
-    "kendall": stats.kendalltau,
+    "pearson": _stats.pearsonr,
+    "spearman": _stats.spearmanr,
+    "kendall": _stats.kendalltau,
 }
 
 #: Coarse kind used by :func:`mixed_type_association_matrix` to decide which
@@ -194,8 +193,16 @@ def _shannon_entropy(probabilities: np.ndarray) -> float:
 
 
 def _contingency_table(x: np.ndarray, y: np.ndarray) -> np.ndarray:
-    """Build the ``(r, c)`` contingency (count) table for two categorical arrays."""
-    return crosstab(x, y).count.astype(np.float64)
+    """Build the ``(r, c)`` contingency (count) table for two categorical arrays.
+
+    First-party replacement for ``scipy.stats.contingency.crosstab``: map each array's distinct
+    values to row/column indices and accumulate counts. Returns a ``float64`` ``(r, c)`` matrix.
+    """
+    x_levels, x_idx = np.unique(x, return_inverse=True)
+    y_levels, y_idx = np.unique(y, return_inverse=True)
+    table = np.zeros((x_levels.shape[0], y_levels.shape[0]), dtype=np.float64)
+    np.add.at(table, (x_idx, y_idx), 1.0)
+    return table
 
 
 # ---------------------------------------------------------------------------
@@ -227,10 +234,9 @@ def continuous_correlation(
 ) -> CorrelationResult:
     """Continuous-continuous correlation between ``x`` and ``y``.
 
-    A thin, consistent wrapper around ``scipy.stats.pearsonr`` (linear
-    correlation), ``scipy.stats.spearmanr`` (rank/monotonic correlation), or
-    ``scipy.stats.kendalltau`` (rank concordance) -- SciPy's own
-    implementations are used directly and are not reimplemented here.
+    Dispatches to the first-party :func:`dscraft.eda._stats.pearsonr` (linear
+    correlation), ``spearmanr`` (rank/monotonic correlation), or
+    ``kendalltau`` (rank concordance), all built from scratch on numpy.
 
     NaN policy: pairwise-complete-case. Rows where either ``x`` or ``y`` is
     NaN are dropped before the correlation is computed.
@@ -278,13 +284,13 @@ def continuous_correlation(
 def cramers_v(x, y, *, bias_correction: bool = False) -> float:
     """Cramer's V association between two categorical arrays.
 
-    Computed from a contingency table (``scipy.stats.contingency.crosstab``)
-    and its chi-squared statistic (``scipy.stats.chi2_contingency``, with
-    Yates' continuity correction explicitly disabled -- that correction
-    exists to make a chi-squared *hypothesis test* more conservative for 2x2
-    tables, and applying it here would bias Cramer's V's *magnitude* itself
-    downward, which is not what this function is being asked for), combined
-    via the standard formula::
+    Computed from a first-party contingency table (:func:`_contingency_table`)
+    and its chi-squared statistic (:func:`dscraft.eda._stats.chi2_contingency`,
+    which applies no continuity correction -- that correction exists to make a
+    chi-squared *hypothesis test* more conservative for 2x2 tables, and
+    applying it here would bias Cramer's V's *magnitude* itself downward,
+    which is not what this function is being asked for), combined via the
+    standard formula::
 
         V = sqrt(chi2 / (n * min(r - 1, c - 1)))
 
@@ -335,7 +341,7 @@ def cramers_v(x, y, *, bias_correction: bool = False) -> float:
     table = _contingency_table(x_clean, y_clean)
     n = table.sum()
     r, c = table.shape
-    chi2, _p_value, _dof, _expected = stats.chi2_contingency(table, correction=False)
+    chi2, _dof = _stats.chi2_contingency(table)
     phi2 = chi2 / n
 
     if not bias_correction:

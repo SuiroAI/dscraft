@@ -129,11 +129,39 @@ from dscraft.eda.sketches import (
     estimate_cardinality,
     estimate_quantiles,
 )
+from dscraft.eda._univariate import (
+    CategoricalDescriptor,
+    NumericDescriptor,
+    categorical_descriptor,
+    numeric_descriptor,
+)
+from dscraft.eda._outliers import (
+    ColumnOutlierReport,
+    IsolationForest,
+    iqr_outliers,
+    mad_outliers,
+)
+from dscraft.eda._temporal import (
+    TemporalDescriptor,
+    autocorrelation,
+    temporal_descriptor,
+)
+from dscraft.eda._pca import PCA, PCAResult
 
 __all__ = [
     "EDAProfile",
     "LazyEDA",
     "PlotnineExtraNotInstalledError",
+    "CategoricalDescriptor",
+    "NumericDescriptor",
+    "ColumnOutlierReport",
+    "IsolationForest",
+    "TemporalDescriptor",
+    "PCA",
+    "PCAResult",
+    "autocorrelation",
+    "iqr_outliers",
+    "mad_outliers",
     "association_heatmap",
     "column_distribution",
 ]
@@ -156,6 +184,10 @@ _NUMERIC_CATEGORY: ColumnCategory = "numeric"
 #: Column categories that receive a cardinality/top-K-histogram
 #: categorical-sketch pass.
 _STRING_CATEGORY: ColumnCategory = "string"
+
+#: Column category that receives a temporal-coverage/cadence descriptor pass
+#: (see :mod:`dscraft.eda._temporal`). Previously a no-sketch category.
+_TEMPORAL_CATEGORY: ColumnCategory = "temporal"
 
 
 def _quantile_label(q: float) -> str:
@@ -255,6 +287,32 @@ class EDAProfile:
             :class:`~dscraft.eda.associations.AssociationMatrixResult`
             computed across every profiled column, or ``None`` if the
             source had zero columns (there is nothing to associate).
+        numeric_descriptors: a mapping of column name to
+            :class:`~dscraft.eda._univariate.NumericDescriptor` (mean/var/
+            std, min/max/range, median/MAD/IQR, skewness/kurtosis,
+            coefficient of variation) for every ``"numeric"`` column with
+            at least one finite value. Same absent-rather-than-placeholder
+            convention as ``quantile_results``.
+        categorical_descriptors: a mapping of column name to
+            :class:`~dscraft.eda._univariate.CategoricalDescriptor`
+            (distinct count, mode + frequency, normalized entropy) for
+            every ``"string"`` column with at least one non-null value.
+        column_outliers: a mapping of column name to
+            :class:`~dscraft.eda._outliers.ColumnOutlierReport` for every
+            ``"numeric"`` column with at least one finite value -- a
+            univariate outlier screen (IQR fences by default, or robust
+            MAD z-score; see :class:`LazyEDA`'s ``outlier_method``).
+        temporal_descriptors: a mapping of column name to
+            :class:`~dscraft.eda._temporal.TemporalDescriptor` for every
+            ``"temporal"`` (date/datetime) column with at least one
+            non-null value -- range coverage, cadence, gap detection,
+            monotonicity/duplicates. Previously ``"temporal"`` columns got
+            only a schema/null summary.
+        pca: a :class:`~dscraft.eda._pca.PCAResult` computed over the
+            source's numeric columns (explained-variance curve +
+            effective-dimensionality readout), or ``None`` when there were
+            fewer than two numeric columns / too few complete rows to run
+            PCA.
     """
 
     def __init__(
@@ -267,6 +325,11 @@ class EDAProfile:
         cardinality_results: dict[str, HLLResult],
         association_matrix: Optional[AssociationMatrixResult],
         report_data: EDAReportData,
+        numeric_descriptors: Optional[dict[str, NumericDescriptor]] = None,
+        categorical_descriptors: Optional[dict[str, CategoricalDescriptor]] = None,
+        column_outliers: Optional[dict[str, ColumnOutlierReport]] = None,
+        temporal_descriptors: Optional[dict[str, TemporalDescriptor]] = None,
+        pca: Optional[PCAResult] = None,
     ) -> None:
         self.schema_report = schema_report
         self.null_report = null_report
@@ -274,6 +337,15 @@ class EDAProfile:
         self.quantile_results = quantile_results
         self.cardinality_results = cardinality_results
         self.association_matrix = association_matrix
+        self.numeric_descriptors = numeric_descriptors if numeric_descriptors is not None else {}
+        self.categorical_descriptors = (
+            categorical_descriptors if categorical_descriptors is not None else {}
+        )
+        self.column_outliers = column_outliers if column_outliers is not None else {}
+        self.temporal_descriptors = (
+            temporal_descriptors if temporal_descriptors is not None else {}
+        )
+        self.pca = pca
         self._report_data = report_data
 
     @property
@@ -324,6 +396,7 @@ class LazyEDA:
         quantiles: Sequence[float] = _DEFAULT_QUANTILES,
         hll_log2_k: int = 12,
         kll_k: int = 200,
+        outlier_method: str = "iqr",
     ) -> None:
         """
         Args:
@@ -341,12 +414,19 @@ class LazyEDA:
             kll_k: precision parameter passed through to every
                 :func:`dscraft.eda.sketches.estimate_quantiles` call (must
                 be in ``[8, 65535]`` -- see that function's docstring).
+            outlier_method: univariate outlier screen applied per numeric
+                column -- ``"iqr"`` (Tukey's fences, default) or ``"mad"``
+                (robust median/MAD z-score). See
+                :mod:`dscraft.eda._outliers`.
         """
+        if outlier_method not in ("iqr", "mad"):
+            raise ValueError(f"outlier_method must be 'iqr' or 'mad', got {outlier_method!r}.")
         self._histogram_bins = histogram_bins
         self._top_k_categories = top_k_categories
         self._quantiles = tuple(quantiles)
         self._hll_log2_k = hll_log2_k
         self._kll_k = kll_k
+        self._outlier_method = outlier_method
 
     def profile(
         self,
@@ -388,6 +468,10 @@ class LazyEDA:
 
         quantile_results: dict[str, KLLResult] = {}
         cardinality_results: dict[str, HLLResult] = {}
+        numeric_descriptors: dict[str, NumericDescriptor] = {}
+        categorical_descriptors: dict[str, CategoricalDescriptor] = {}
+        column_outliers: dict[str, ColumnOutlierReport] = {}
+        temporal_descriptors: dict[str, TemporalDescriptor] = {}
         column_summaries: list[ColumnSummary] = []
 
         for column in schema_report.columns:
@@ -399,6 +483,10 @@ class LazyEDA:
                     row_count=row_count,
                     quantile_results=quantile_results,
                     cardinality_results=cardinality_results,
+                    numeric_descriptors=numeric_descriptors,
+                    categorical_descriptors=categorical_descriptors,
+                    column_outliers=column_outliers,
+                    temporal_descriptors=temporal_descriptors,
                 )
             )
 
@@ -418,6 +506,8 @@ class LazyEDA:
                 values=association_result.matrix.tolist(),
             )
 
+        pca_result = self._compute_pca(full_frame, schema_report)
+
         report_data = EDAReportData(
             column_summaries=column_summaries,
             association_matrix=report_association_matrix,
@@ -434,6 +524,11 @@ class LazyEDA:
             cardinality_results=cardinality_results,
             association_matrix=association_result,
             report_data=report_data,
+            numeric_descriptors=numeric_descriptors,
+            categorical_descriptors=categorical_descriptors,
+            column_outliers=column_outliers,
+            temporal_descriptors=temporal_descriptors,
+            pca=pca_result,
         )
 
     def _summarize_column(
@@ -445,6 +540,10 @@ class LazyEDA:
         row_count: int,
         quantile_results: dict[str, KLLResult],
         cardinality_results: dict[str, HLLResult],
+        numeric_descriptors: dict[str, NumericDescriptor],
+        categorical_descriptors: dict[str, CategoricalDescriptor],
+        column_outliers: dict[str, ColumnOutlierReport],
+        temporal_descriptors: dict[str, TemporalDescriptor],
     ) -> ColumnSummary:
         """Build one column's :class:`~dscraft.eda.report.ColumnSummary`.
 
@@ -489,13 +588,34 @@ class LazyEDA:
                     for q, value in kll_result.quantile_estimates.items()
                 }
                 histogram = _numeric_histogram(finite_values, self._histogram_bins)
+                # Univariate distribution descriptor over the same finite values.
+                numeric_descriptors[name] = numeric_descriptor(finite_values)
+                # Univariate outlier screen over the same finite values.
+                if self._outlier_method == "mad":
+                    column_outliers[name] = mad_outliers(finite_values)
+                else:
+                    column_outliers[name] = iqr_outliers(finite_values)
         elif column.category == _STRING_CATEGORY and non_null_values:
             hll_result = estimate_cardinality(non_null_values, log2_k=self._hll_log2_k)
             cardinality_results[name] = hll_result
             cardinality_estimate = round(hll_result.estimate)
             histogram = _categorical_histogram(non_null_values, self._top_k_categories)
-        # "boolean"/"temporal"/"other" columns intentionally get neither
-        # sketch -- see the module docstring's routing-heuristic section.
+            # Concentration descriptor over the same non-null categorical values.
+            categorical_descriptors[name] = categorical_descriptor(non_null_values)
+        elif column.category == _TEMPORAL_CATEGORY:
+            # Temporal columns get a coverage/cadence descriptor (first-party temporal EDA).
+            # Convert the (non-null) temporal column to epoch seconds via Polars, then profile.
+            epoch_seconds = (
+                full_frame[name]
+                .drop_nulls()
+                .dt.epoch(time_unit="s")
+                .cast(pl.Float64)
+                .to_list()
+            )
+            if epoch_seconds:
+                temporal_descriptors[name] = temporal_descriptor(epoch_seconds)
+        # "boolean"/"other" columns intentionally get neither sketch nor
+        # descriptor -- see the module docstring's routing-heuristic section.
 
         return ColumnSummary(
             name=name,
@@ -507,3 +627,26 @@ class LazyEDA:
             quantiles=quantiles,
             histogram=histogram,
         )
+
+    def _compute_pca(
+        self, full_frame: pl.DataFrame, schema_report: SchemaReport
+    ) -> Optional[PCAResult]:
+        """Run first-party PCA over the source's numeric columns, for a dimensionality readout.
+
+        Selects every ``"numeric"`` column, drops any row with a null/non-finite value in any of
+        them (PCA needs a complete, finite matrix), and -- only if at least two numeric columns
+        and at least two complete rows remain -- fits :class:`dscraft.eda._pca.PCA` and returns its
+        :class:`~dscraft.eda._pca.PCAResult` summary. Returns ``None`` otherwise (there is no
+        meaningful multivariate structure to report), rather than raising: a single-numeric-column
+        or all-null dataset is a normal, if uninteresting, profiling outcome.
+        """
+        numeric_names = [c.name for c in schema_report.columns if c.category == _NUMERIC_CATEGORY]
+        if len(numeric_names) < 2:
+            return None
+        matrix = full_frame.select(numeric_names).to_numpy().astype(float)
+        finite_rows = np.all(np.isfinite(matrix), axis=1)
+        matrix = matrix[finite_rows]
+        if matrix.shape[0] < 2:
+            return None
+        pca = PCA(standardize=True).fit(matrix)
+        return pca.summary(numeric_names)

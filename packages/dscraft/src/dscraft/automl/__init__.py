@@ -6,16 +6,25 @@ This scaffold-depth pass implements the architecture doc's (Part 3,
 replacing brittle pickle-based serialization (see `compile.py` and the
 package README for details and clean-room provenance), plus:
 
-- a multi-backend model-selection surface: pluggable gradient-boosted-tree
-  model backends (`models.py`: XGBoost/LightGBM/CatBoost, per the
-  multi-backend design principle -- all three equally supported, none a
-  "default");
-- an unsupervised clustering allowlist (`clustering.py`: HDBSCAN via
-  scikit-learn's built-in `sklearn.cluster.HDBSCAN`), independent of the
+- a multi-backend model-selection surface: first-party, caller-selectable
+  model backends (`models.py`: `DSLinear`/`DSLogistic` linear models,
+  `DSBoost` gradient-boosted trees, `DSRandomForest`/`DSExtraTrees` bagging
+  ensembles -- all built from scratch on numpy, per the first-party
+  automl/eda rebuild, with the third-party XGBoost/LightGBM/CatBoost
+  backends removed; see
+  docs/decisions/2026-10-first-party-automl-eda-rebuild.md);
+- an unsupervised clustering allowlist (`clustering.py`: first-party
+  `DSKMeans`/`DSDBSCAN`/`DSAgglomerative`/`DSHDBSCAN`, built from scratch on
+  numpy in `_clustering.py` -- the `sklearn.cluster.HDBSCAN` backend it
+  originally wrapped was replaced by the first-party `DSHDBSCAN`, with
+  `"HDBSCAN"` kept as a backward-compatible alias), independent of the
   supervised model-selection surface; and
-- an imbalanced-class resampling allowlist (`resampling.py`:
-  `imbalanced-learn`'s `RandomOverSampler`/`SMOTE`/`RandomUnderSampler`),
-  an optional preprocessing step ahead of the classifier path.
+- an imbalanced-class resampling allowlist (`resampling.py`: first-party
+  `RandomOverSampler`/`SMOTE`/`BorderlineSMOTE`/`RandomUnderSampler`, built
+  from scratch on numpy in `_resampling.py` -- the third-party
+  `imbalanced-learn` backends it originally wrapped were replaced by the
+  first-party automl/eda rebuild), an optional preprocessing step ahead of
+  the classifier path.
 
 The streaming/incremental `partial_fit` fading-factor evaluator and the
 PSI drift-detection feature from the same architecture doc section are

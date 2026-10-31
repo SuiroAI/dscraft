@@ -13,8 +13,8 @@ scripts" rule).
 Run with:
     python packages/dscraft/examples/automl/compile_iris_example.py
 
-Requires the `onnx` extra:
-    pip install -e "packages/dscraft[onnx]"
+Requires the `automl-onnx` extra (on top of `automl`):
+    pip install -e "packages/dscraft[automl,automl-onnx]"
 """
 
 from __future__ import annotations
@@ -45,8 +45,8 @@ def main() -> None:
         import onnxruntime
     except ImportError:
         print(
-            "This example requires the 'onnx' extra. Install with:\n"
-            '    pip install -e "packages/dscraft[onnx]"',
+            "This example requires the 'automl-onnx' extra. Install with:\n"
+            '    pip install -e "packages/dscraft[automl,automl-onnx]"',
             file=sys.stderr,
         )
         raise SystemExit(1)

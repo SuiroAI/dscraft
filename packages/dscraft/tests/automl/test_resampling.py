@@ -19,7 +19,9 @@ from dscraft.automl.resampling import build_resampler as build_resampler_direct
 def test_public_api_surface() -> None:
     """`build_resampler`/`SUPPORTED_RESAMPLERS` are importable from `dscraft.automl`."""
     assert build_resampler is build_resampler_direct
-    assert set(SUPPORTED_RESAMPLERS) == {"RandomOverSampler", "SMOTE", "RandomUnderSampler"}
+    assert set(SUPPORTED_RESAMPLERS) == {
+        "RandomOverSampler", "SMOTE", "BorderlineSMOTE", "RandomUnderSampler",
+    }
 
 
 def _imbalance_ratio(y: np.ndarray) -> float:
@@ -28,7 +30,9 @@ def _imbalance_ratio(y: np.ndarray) -> float:
     return counts.min() / counts.sum()
 
 
-@pytest.mark.parametrize("name", ["RandomOverSampler", "SMOTE", "RandomUnderSampler"])
+@pytest.mark.parametrize(
+    "name", ["RandomOverSampler", "SMOTE", "BorderlineSMOTE", "RandomUnderSampler"]
+)
 def test_resampler_improves_class_balance_smoke(name: str) -> None:
     """Each resampler improves class balance on a synthetic imbalanced dataset."""
     X, y = make_classification(
