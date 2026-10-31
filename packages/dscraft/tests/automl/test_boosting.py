@@ -165,8 +165,13 @@ def test_predict_feature_mismatch_raises() -> None:
 
 
 def test_regression_parity_with_xgboost() -> None:
-    """Our booster lands within a reasonable margin of XGBoost on diabetes (correctness check)."""
-    from xgboost import XGBRegressor
+    """Our booster lands within a reasonable margin of XGBoost on diabetes (correctness check).
+
+    XGBoost is no longer a declared dependency of dscraft (the first-party rebuild removed it),
+    so this cross-check is skipped when xgboost is not installed -- it is a development-time
+    correctness validation against the library we replaced, not a runtime requirement.
+    """
+    XGBRegressor = pytest.importorskip("xgboost").XGBRegressor
 
     X, y = load_diabetes(return_X_y=True)
     X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.25, random_state=0)
@@ -179,8 +184,11 @@ def test_regression_parity_with_xgboost() -> None:
 
 
 def test_classification_parity_with_xgboost() -> None:
-    """Our classifier is competitive with XGBoost on breast cancer (correctness check)."""
-    from xgboost import XGBClassifier
+    """Our classifier is competitive with XGBoost on breast cancer (correctness check).
+
+    Skipped when xgboost is absent -- see :func:`test_regression_parity_with_xgboost`.
+    """
+    XGBClassifier = pytest.importorskip("xgboost").XGBClassifier
 
     X, y = load_breast_cancer(return_X_y=True)
     X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.25, random_state=0, stratify=y)

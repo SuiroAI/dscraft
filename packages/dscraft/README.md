@@ -29,7 +29,7 @@ what's here today and how to install/run it.
 | Subpackage | Extra | What it does |
 |---|---|---|
 | [`dscraft.core`](#dscraftcore) | *(base install)* | Shared substrate: three-tier data conventions, OTel GenAI telemetry helpers, license-isolation policy, shared sandbox executor. |
-| [`dscraft.automl`](#dscraftautoml) | `automl` (+ `automl-onnx`) | Clean-room tabular AutoML — `.compile()` fuses a fitted `sklearn.pipeline.Pipeline` into one portable ONNX graph via `skl2onnx`; `build_model`/`build_clusterer`/`build_resampler` add selectable XGBoost/LightGBM/CatBoost, HDBSCAN, and imbalanced-learn backends. |
+| [`dscraft.automl`](#dscraftautoml) | `automl` (+ `automl-onnx`) | First-party tabular AutoML — `.compile()` fuses a fitted `sklearn.pipeline.Pipeline` into one portable ONNX graph via `skl2onnx`; `build_model` offers first-party linear/logistic, gradient-boosting, and random-forest/extra-trees backends (built from scratch on numpy, no boosting library); `build_clusterer`/`build_resampler` add HDBSCAN and imbalanced-learn backends. |
 | [`dscraft.clean`](#dscraftclean) | `clean` | Data-quality firewall — the composed `Sanitizer` entrypoint (DeCoLe label-error detection, train/test contamination auditing, Dataset Integrity Score), plus lower-level ONNX Runtime (PyTorch-free) text *and* image embeddings feeding cosine-similarity near-duplicate detection. |
 | [`dscraft.forecast`](#dscraftforecast) | `forecast` | Classical statistical forecasting (13 `statsforecast` models: AutoARIMA/AutoETS/AutoCES/AutoTheta autofits, simple baselines, Croston) over a Tier-1 Arrow-backed pipeline, `utilsforecast`-scored backtesting, and standalone STL/MSTL (+ Box-Cox) decomposition. |
 | [`dscraft.graph`](#dscraftgraph) | `graph` | Sparse graph ML — a concrete Tier-2 COO↔CSR/CSC tensor adapter (PyG↔SciPy) plus a minimal GCN forward pass. |
@@ -118,22 +118,23 @@ sklearn-compatible estimator from a caller-selected backend, all equally
 supported per this project's multi-backend design principle (none is a
 "default"). `SUPPORTED_CLASSIFIERS`/`SUPPORTED_REGRESSORS` are the name ->
 class allowlists `build_model` dispatches through, mirroring
-`dscraft.forecast`'s `SUPPORTED_MODELS` pattern. Alongside the
-third-party gradient-boosted-tree backends (XGBoost/LightGBM/CatBoost), the
-allowlist now also exposes **first-party** backends built from scratch on
-numpy -- `DSLinear` (OLS/ridge/lasso/elastic-net regression,
-`dscraft.automl._linear.DSLinearRegressor`), `DSLogistic` (binary IRLS /
-multiclass one-vs-rest logistic regression,
-`dscraft.automl._linear.DSLogisticClassifier`), `DSBoost` (second-order
-gradient-boosted decision trees for both regression and binary/multiclass
-classification, `dscraft.automl._boosting`, the in-house replacement for the
-XGBoost/LightGBM/CatBoost backends), and the bagging-ensemble pair
-`DSRandomForest` / `DSExtraTrees` (`dscraft.automl._forest`, random forests
-and extremely-randomized trees for both tasks). These are the first
-installments of the first-party automl/eda rebuild (see
-`docs/decisions/2026-10-first-party-automl-eda-rebuild.md`), which is
-progressively replacing the third-party *algorithm* backends with in-house
-implementations.
+`dscraft.forecast`'s `SUPPORTED_MODELS` pattern. Every backend is a
+**first-party** implementation built from scratch on numpy (via
+`dscraft.automl._tree`/`_primitives`):
+
+- `DSLinear` — OLS/ridge/lasso/elastic-net regression (`_linear.py`)
+- `DSLogistic` — binary IRLS / multiclass one-vs-rest logistic regression (`_linear.py`)
+- `DSBoost` — second-order gradient-boosted decision trees for regression and
+  binary/multiclass classification (`_boosting.py`)
+- `DSRandomForest` / `DSExtraTrees` — random forests and
+  extremely-randomized-trees ensembles for both tasks (`_forest.py`)
+
+The third-party gradient-boosted-tree backends (XGBoost/LightGBM/CatBoost)
+this module originally wrapped have been **removed** — their capability is
+now the first-party `DSBoost` backend, so no boosting library is a
+dependency of this package. This is part of the first-party automl/eda
+rebuild (see `docs/decisions/2026-10-first-party-automl-eda-rebuild.md`),
+which makes the modeling, boosting, and techniques our own end to end.
 
 `dscraft.automl.build_clusterer(name, **kwargs)` builds an unfitted,
 sklearn-compatible clustering estimator -- currently HDBSCAN, via

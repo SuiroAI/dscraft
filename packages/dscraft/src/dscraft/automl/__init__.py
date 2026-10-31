@@ -6,10 +6,13 @@ This scaffold-depth pass implements the architecture doc's (Part 3,
 replacing brittle pickle-based serialization (see `compile.py` and the
 package README for details and clean-room provenance), plus:
 
-- a multi-backend model-selection surface: pluggable gradient-boosted-tree
-  model backends (`models.py`: XGBoost/LightGBM/CatBoost, per the
-  multi-backend design principle -- all three equally supported, none a
-  "default");
+- a multi-backend model-selection surface: first-party, caller-selectable
+  model backends (`models.py`: `DSLinear`/`DSLogistic` linear models,
+  `DSBoost` gradient-boosted trees, `DSRandomForest`/`DSExtraTrees` bagging
+  ensembles -- all built from scratch on numpy, per the first-party
+  automl/eda rebuild, with the third-party XGBoost/LightGBM/CatBoost
+  backends removed; see
+  docs/decisions/2026-10-first-party-automl-eda-rebuild.md);
 - an unsupervised clustering allowlist (`clustering.py`: HDBSCAN via
   scikit-learn's built-in `sklearn.cluster.HDBSCAN`), independent of the
   supervised model-selection surface; and
