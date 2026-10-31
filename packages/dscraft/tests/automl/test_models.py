@@ -19,8 +19,27 @@ from dscraft.automl.models import build_model as build_model_direct
 def test_public_api_surface() -> None:
     """`build_model`/`SUPPORTED_*` are importable from `dscraft.automl` itself."""
     assert build_model is build_model_direct
-    assert set(SUPPORTED_CLASSIFIERS) == {"XGBoost", "LightGBM", "CatBoost", "DSLogistic"}
-    assert set(SUPPORTED_REGRESSORS) == {"XGBoost", "LightGBM", "CatBoost", "DSLinear"}
+    assert set(SUPPORTED_CLASSIFIERS) == {
+        "XGBoost", "LightGBM", "CatBoost", "DSLogistic", "DSBoost",
+    }
+    assert set(SUPPORTED_REGRESSORS) == {
+        "XGBoost", "LightGBM", "CatBoost", "DSLinear", "DSBoost",
+    }
+
+
+def test_first_party_boosting_backend_fit_predict() -> None:
+    """The first-party `DSBoost` backend fits/predicts for both tasks via the public factory."""
+    X, y = load_iris(return_X_y=True)
+    X_train, X_test, y_train, _y_test = train_test_split(X, y, test_size=0.25, random_state=0)
+    clf = build_model("DSBoost", "classification", n_estimators=20, random_state=0)
+    clf.fit(X_train, y_train)
+    assert np.isin(np.asarray(clf.predict(X_test)).ravel(), np.unique(y)).all()
+
+    Xr, yr = load_diabetes(return_X_y=True)
+    Xr_tr, Xr_te, yr_tr, _ = train_test_split(Xr, yr, test_size=0.25, random_state=0)
+    reg = build_model("DSBoost", "regression", n_estimators=20, random_state=0)
+    reg.fit(Xr_tr, yr_tr)
+    assert len(reg.predict(Xr_te)) == len(Xr_te)
 
 
 def test_first_party_classifier_backend_fit_predict() -> None:

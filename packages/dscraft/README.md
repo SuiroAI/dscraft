@@ -119,13 +119,16 @@ supported per this project's multi-backend design principle (none is a
 "default"). `SUPPORTED_CLASSIFIERS`/`SUPPORTED_REGRESSORS` are the name ->
 class allowlists `build_model` dispatches through, mirroring
 `dscraft.forecast`'s `SUPPORTED_MODELS` pattern. Alongside the
-gradient-boosted-tree backends (XGBoost/LightGBM/CatBoost), the allowlist
-now also exposes **first-party** backends built from scratch on numpy --
-`DSLinear` (OLS/ridge/lasso/elastic-net regression,
-`dscraft.automl._linear.DSLinearRegressor`) and `DSLogistic` (binary IRLS /
+third-party gradient-boosted-tree backends (XGBoost/LightGBM/CatBoost), the
+allowlist now also exposes **first-party** backends built from scratch on
+numpy -- `DSLinear` (OLS/ridge/lasso/elastic-net regression,
+`dscraft.automl._linear.DSLinearRegressor`), `DSLogistic` (binary IRLS /
 multiclass one-vs-rest logistic regression,
-`dscraft.automl._linear.DSLogisticClassifier`) -- the first installments of
-the first-party automl/eda rebuild (see
+`dscraft.automl._linear.DSLogisticClassifier`), and `DSBoost` (second-order
+gradient-boosted decision trees for both regression and binary/multiclass
+classification, `dscraft.automl._boosting`, the in-house replacement for the
+XGBoost/LightGBM/CatBoost backends). These are the first installments of the
+first-party automl/eda rebuild (see
 `docs/decisions/2026-10-first-party-automl-eda-rebuild.md`), which is
 progressively replacing the third-party *algorithm* backends with in-house
 implementations.
