@@ -350,10 +350,19 @@ the per-column `KLLResult`/`HLLResult` sketches, and the
 `AssociationMatrixResult` — as inspectable attributes, not just an
 `.export()` side effect, matching this platform's convention (see
 `dscraft.clean`'s `SanitizerReport`) of returning programmatically usable
-result objects. Outlier/anomaly detection and time-series-specific EDA
-(despite `dscraft.forecast` being an obvious future consumer) are out of
-scope for this pass — see `DSCraft_Unified_Architecture.md`'s LazyEDA
-module entry for what's deferred. Install via the `eda` extra.
+result objects. The first-party automl/eda rebuild added breadth to the
+profile: every numeric column gets a `NumericDescriptor` (mean/var/std,
+median/MAD/IQR, skewness/kurtosis, CV) and a univariate outlier screen
+(`column_outliers`, IQR fences or robust MAD z-score); every string column
+gets a `CategoricalDescriptor` (distinct/mode/entropy); every temporal
+column gets a `TemporalDescriptor` (range, cadence, gap detection); and the
+numeric columns together get a `PCAResult` (explained-variance curve +
+effective-dimensionality readout). `dscraft.eda` also exports standalone
+`IsolationForest` (multivariate anomaly detection), `PCA`,
+`autocorrelation`, `iqr_outliers`, and `mad_outliers` for direct use.
+Install via the `eda` extra (now just polars + numpy — the former
+`datasketches`/`scipy` deps were removed when the sketch and correlation
+algorithms became first-party).
 
 For publication-quality, static, layered exploratory plots (as an
 alternative to — not a replacement for — the interactive single-file HTML

@@ -146,6 +146,7 @@ from dscraft.eda._temporal import (
     autocorrelation,
     temporal_descriptor,
 )
+from dscraft.eda._pca import PCA, PCAResult
 
 __all__ = [
     "EDAProfile",
@@ -156,6 +157,8 @@ __all__ = [
     "ColumnOutlierReport",
     "IsolationForest",
     "TemporalDescriptor",
+    "PCA",
+    "PCAResult",
     "autocorrelation",
     "iqr_outliers",
     "mad_outliers",
@@ -305,6 +308,11 @@ class EDAProfile:
             non-null value -- range coverage, cadence, gap detection,
             monotonicity/duplicates. Previously ``"temporal"`` columns got
             only a schema/null summary.
+        pca: a :class:`~dscraft.eda._pca.PCAResult` computed over the
+            source's numeric columns (explained-variance curve +
+            effective-dimensionality readout), or ``None`` when there were
+            fewer than two numeric columns / too few complete rows to run
+            PCA.
     """
 
     def __init__(
@@ -321,6 +329,7 @@ class EDAProfile:
         categorical_descriptors: Optional[dict[str, CategoricalDescriptor]] = None,
         column_outliers: Optional[dict[str, ColumnOutlierReport]] = None,
         temporal_descriptors: Optional[dict[str, TemporalDescriptor]] = None,
+        pca: Optional[PCAResult] = None,
     ) -> None:
         self.schema_report = schema_report
         self.null_report = null_report
@@ -336,6 +345,7 @@ class EDAProfile:
         self.temporal_descriptors = (
             temporal_descriptors if temporal_descriptors is not None else {}
         )
+        self.pca = pca
         self._report_data = report_data
 
     @property
@@ -496,6 +506,8 @@ class LazyEDA:
                 values=association_result.matrix.tolist(),
             )
 
+        pca_result = self._compute_pca(full_frame, schema_report)
+
         report_data = EDAReportData(
             column_summaries=column_summaries,
             association_matrix=report_association_matrix,
@@ -516,6 +528,7 @@ class LazyEDA:
             categorical_descriptors=categorical_descriptors,
             column_outliers=column_outliers,
             temporal_descriptors=temporal_descriptors,
+            pca=pca_result,
         )
 
     def _summarize_column(
@@ -614,3 +627,26 @@ class LazyEDA:
             quantiles=quantiles,
             histogram=histogram,
         )
+
+    def _compute_pca(
+        self, full_frame: pl.DataFrame, schema_report: SchemaReport
+    ) -> Optional[PCAResult]:
+        """Run first-party PCA over the source's numeric columns, for a dimensionality readout.
+
+        Selects every ``"numeric"`` column, drops any row with a null/non-finite value in any of
+        them (PCA needs a complete, finite matrix), and -- only if at least two numeric columns
+        and at least two complete rows remain -- fits :class:`dscraft.eda._pca.PCA` and returns its
+        :class:`~dscraft.eda._pca.PCAResult` summary. Returns ``None`` otherwise (there is no
+        meaningful multivariate structure to report), rather than raising: a single-numeric-column
+        or all-null dataset is a normal, if uninteresting, profiling outcome.
+        """
+        numeric_names = [c.name for c in schema_report.columns if c.category == _NUMERIC_CATEGORY]
+        if len(numeric_names) < 2:
+            return None
+        matrix = full_frame.select(numeric_names).to_numpy().astype(float)
+        finite_rows = np.all(np.isfinite(matrix), axis=1)
+        matrix = matrix[finite_rows]
+        if matrix.shape[0] < 2:
+            return None
+        pca = PCA(standardize=True).fit(matrix)
+        return pca.summary(numeric_names)
