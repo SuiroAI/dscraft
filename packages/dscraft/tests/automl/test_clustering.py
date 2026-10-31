@@ -17,7 +17,24 @@ from dscraft.automl.clustering import build_clusterer as build_clusterer_direct
 def test_public_api_surface() -> None:
     """`build_clusterer`/`SUPPORTED_CLUSTERERS` are importable from `dscraft.automl`."""
     assert build_clusterer is build_clusterer_direct
-    assert set(SUPPORTED_CLUSTERERS) == {"HDBSCAN"}
+    assert set(SUPPORTED_CLUSTERERS) == {"DSKMeans", "DSDBSCAN", "HDBSCAN"}
+
+
+def test_first_party_kmeans_backend_smoke() -> None:
+    """The first-party `DSKMeans` backend clusters well-separated blobs via the public factory."""
+    X, _y = make_blobs(n_samples=150, centers=3, cluster_std=0.5, random_state=0)
+    clusterer = build_clusterer("DSKMeans", n_clusters=3, random_state=0)
+    labels = clusterer.fit_predict(X)
+    assert len(set(labels)) == 3
+
+
+def test_first_party_dbscan_backend_smoke() -> None:
+    """The first-party `DSDBSCAN` backend finds density clusters via the public factory."""
+    X, _y = make_blobs(n_samples=150, centers=3, cluster_std=0.4, random_state=0)
+    clusterer = build_clusterer("DSDBSCAN", eps=1.0, min_samples=5)
+    labels = clusterer.fit_predict(X)
+    found_clusters = set(labels) - {-1}
+    assert 1 <= len(found_clusters) <= 5
 
 
 def test_hdbscan_clustering_smoke() -> None:

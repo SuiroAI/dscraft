@@ -29,16 +29,25 @@ from typing import Any
 from sklearn.base import ClusterMixin
 from sklearn.cluster import HDBSCAN
 
+from dscraft.automl._clustering import DSDBSCAN, DSKMeans
+
 __all__ = [
     "SUPPORTED_CLUSTERERS",
     "build_clusterer",
 ]
 
 #: Clustering backends this module supports, keyed by caller-facing name.
-#: HDBSCAN is the only entry today; the allowlist pattern itself (not an
-#: exhaustive set of backends) is what this module establishes, per the
-#: multi-backend design principle.
+#: The first-party automl/eda rebuild (see
+#: docs/decisions/2026-10-first-party-automl-eda-rebuild.md) broadens this
+#: from a single wrapped backend to cover the major clustering *styles*
+#: first-party: `DSKMeans` (centroid-based, `_clustering.DSKMeans`) and
+#: `DSDBSCAN` (density-based, `_clustering.DSDBSCAN`) are built from scratch
+#: on numpy. The `HDBSCAN` entry still wraps `sklearn.cluster.HDBSCAN` for
+#: now; its first-party replacement (hierarchical density-based) lands in
+#: the next step of the rebuild.
 SUPPORTED_CLUSTERERS: dict[str, type] = {
+    "DSKMeans": DSKMeans,
+    "DSDBSCAN": DSDBSCAN,
     "HDBSCAN": HDBSCAN,
 }
 
