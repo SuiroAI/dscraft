@@ -321,7 +321,9 @@ from scratch on numpy in `_hll.py`/`_kll.py` -- the Apache `datasketches`
 dependency this used to wrap was removed by the first-party automl/eda
 rebuild), `associations` (a mixed
 continuous/categorical/mixed-type pairwise correlation/association-matrix
-suite built on SciPy), and a `report` renderer that turns already-
+suite -- Pearson/Spearman/Kendall, Cramér's V, Theil's U, correlation
+ratio -- all first-party on numpy, `_stats.py` + `associations.py`, no
+SciPy), and a `report` renderer that turns already-
 aggregated summaries into one self-contained, offline-friendly HTML/Canvas
 document — no external CDN references, no charting library, just inlined
 CSS/JS.

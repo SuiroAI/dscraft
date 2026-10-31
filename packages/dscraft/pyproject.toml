@@ -199,11 +199,12 @@ agent = []
 # library is a dependency here. `polars` is pinned to the same floor as the
 # `dev` extra's own polars pin below (both need Polars' lazy-execution
 # API; keeping the two floors in sync avoids two different minimum
-# versions of the same library across extras of one package). `scipy` is
-# needed directly by associations.py's Cramer's V / correlation-ratio /
-# continuous-correlation implementations (`scipy.stats`,
-# `scipy.stats.contingency`) -- report.py and engine.py need neither
-# numpy nor scipy beyond what polars/datasketches already pull in.
+# versions of the same library across extras of one package). `scipy` was
+# previously needed by associations.py's correlation/chi-squared
+# statistics, but the first-party automl/eda rebuild internalized those
+# (dscraft.eda._stats, from scratch on numpy), so `scipy` is no longer a
+# dependency of the `eda` extra -- engine.py, sketches.py, associations.py,
+# and report.py now need only numpy + polars.
 #
 # DuckDB was originally floated (per the architecture doc's EDA research)
 # as a second lazy-execution engine alongside Polars, but is deliberately
@@ -219,7 +220,6 @@ agent = []
 # reflexively now.
 eda = [
     "polars>=0.20",
-    "scipy>=1.11",
 ]
 # `eda`'s optional plotnine-backed grammar-of-graphics plotting path only
 # (dscraft/eda/plots.py) -- plotnine pulls in matplotlib (and pandas) on
