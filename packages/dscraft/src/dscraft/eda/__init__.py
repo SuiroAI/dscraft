@@ -135,6 +135,12 @@ from dscraft.eda._univariate import (
     categorical_descriptor,
     numeric_descriptor,
 )
+from dscraft.eda._outliers import (
+    ColumnOutlierReport,
+    IsolationForest,
+    iqr_outliers,
+    mad_outliers,
+)
 
 __all__ = [
     "EDAProfile",
@@ -142,6 +148,10 @@ __all__ = [
     "PlotnineExtraNotInstalledError",
     "CategoricalDescriptor",
     "NumericDescriptor",
+    "ColumnOutlierReport",
+    "IsolationForest",
+    "iqr_outliers",
+    "mad_outliers",
     "association_heatmap",
     "column_distribution",
 ]
@@ -273,6 +283,11 @@ class EDAProfile:
             :class:`~dscraft.eda._univariate.CategoricalDescriptor`
             (distinct count, mode + frequency, normalized entropy) for
             every ``"string"`` column with at least one non-null value.
+        column_outliers: a mapping of column name to
+            :class:`~dscraft.eda._outliers.ColumnOutlierReport` for every
+            ``"numeric"`` column with at least one finite value -- a
+            univariate outlier screen (IQR fences by default, or robust
+            MAD z-score; see :class:`LazyEDA`'s ``outlier_method``).
     """
 
     def __init__(
@@ -287,6 +302,7 @@ class EDAProfile:
         report_data: EDAReportData,
         numeric_descriptors: Optional[dict[str, NumericDescriptor]] = None,
         categorical_descriptors: Optional[dict[str, CategoricalDescriptor]] = None,
+        column_outliers: Optional[dict[str, ColumnOutlierReport]] = None,
     ) -> None:
         self.schema_report = schema_report
         self.null_report = null_report
@@ -298,6 +314,7 @@ class EDAProfile:
         self.categorical_descriptors = (
             categorical_descriptors if categorical_descriptors is not None else {}
         )
+        self.column_outliers = column_outliers if column_outliers is not None else {}
         self._report_data = report_data
 
     @property
@@ -348,6 +365,7 @@ class LazyEDA:
         quantiles: Sequence[float] = _DEFAULT_QUANTILES,
         hll_log2_k: int = 12,
         kll_k: int = 200,
+        outlier_method: str = "iqr",
     ) -> None:
         """
         Args:
@@ -365,12 +383,19 @@ class LazyEDA:
             kll_k: precision parameter passed through to every
                 :func:`dscraft.eda.sketches.estimate_quantiles` call (must
                 be in ``[8, 65535]`` -- see that function's docstring).
+            outlier_method: univariate outlier screen applied per numeric
+                column -- ``"iqr"`` (Tukey's fences, default) or ``"mad"``
+                (robust median/MAD z-score). See
+                :mod:`dscraft.eda._outliers`.
         """
+        if outlier_method not in ("iqr", "mad"):
+            raise ValueError(f"outlier_method must be 'iqr' or 'mad', got {outlier_method!r}.")
         self._histogram_bins = histogram_bins
         self._top_k_categories = top_k_categories
         self._quantiles = tuple(quantiles)
         self._hll_log2_k = hll_log2_k
         self._kll_k = kll_k
+        self._outlier_method = outlier_method
 
     def profile(
         self,
@@ -414,6 +439,7 @@ class LazyEDA:
         cardinality_results: dict[str, HLLResult] = {}
         numeric_descriptors: dict[str, NumericDescriptor] = {}
         categorical_descriptors: dict[str, CategoricalDescriptor] = {}
+        column_outliers: dict[str, ColumnOutlierReport] = {}
         column_summaries: list[ColumnSummary] = []
 
         for column in schema_report.columns:
@@ -427,6 +453,7 @@ class LazyEDA:
                     cardinality_results=cardinality_results,
                     numeric_descriptors=numeric_descriptors,
                     categorical_descriptors=categorical_descriptors,
+                    column_outliers=column_outliers,
                 )
             )
 
@@ -464,6 +491,7 @@ class LazyEDA:
             report_data=report_data,
             numeric_descriptors=numeric_descriptors,
             categorical_descriptors=categorical_descriptors,
+            column_outliers=column_outliers,
         )
 
     def _summarize_column(
@@ -477,6 +505,7 @@ class LazyEDA:
         cardinality_results: dict[str, HLLResult],
         numeric_descriptors: dict[str, NumericDescriptor],
         categorical_descriptors: dict[str, CategoricalDescriptor],
+        column_outliers: dict[str, ColumnOutlierReport],
     ) -> ColumnSummary:
         """Build one column's :class:`~dscraft.eda.report.ColumnSummary`.
 
@@ -523,6 +552,11 @@ class LazyEDA:
                 histogram = _numeric_histogram(finite_values, self._histogram_bins)
                 # Univariate distribution descriptor over the same finite values.
                 numeric_descriptors[name] = numeric_descriptor(finite_values)
+                # Univariate outlier screen over the same finite values.
+                if self._outlier_method == "mad":
+                    column_outliers[name] = mad_outliers(finite_values)
+                else:
+                    column_outliers[name] = iqr_outliers(finite_values)
         elif column.category == _STRING_CATEGORY and non_null_values:
             hll_result = estimate_cardinality(non_null_values, log2_k=self._hll_log2_k)
             cardinality_results[name] = hll_result
