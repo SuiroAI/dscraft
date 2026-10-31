@@ -21,6 +21,80 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# ---------------------------------------------------------------------------
+# Unified-backend capability groups (tabular / forecast / eda) + analytics
+# ---------------------------------------------------------------------------
+# These three groups, and their `analytics` union, implement dscraft's
+# "one dependency, conflict-free versions" contract for the classical /
+# tabular data-science stack (Linear: the unified-ds-backend round). A
+# consumer -- e.g. SuiroAI -- depends ONLY on `dscraft[analytics]` (or a
+# single group) and gets a tested, mutually-compatible set of numpy /
+# pandas / scikit-learn / scipy / boosting / statsforecast / eda libraries,
+# rather than hand-assembling versions itself.
+#
+# Unlike the legacy per-subpackage extras below (which carry open `>=`
+# floors), each distribution here is pinned to a tested `>=min,<below`
+# WINDOW. The full union was verified to co-resolve AND import together on
+# Python 3.11 via `uv pip compile` over all three groups at once; the
+# machine-readable mirror of these windows lives in
+# `src/dscraft/_versions.py` and is enforced at runtime by
+# `dscraft.validate_environment(...)`. Keep the two in sync: a change here
+# must be reflected there (and re-resolved) or the CI co-install/validate
+# job fails.
+#
+# Scope: classical/tabular only this round. The torch-based groups
+# (graph/vision/tune) and the automl-onnx export path are tracked in Linear
+# (DSC-61 / DSC-62) and intentionally excluded from `analytics`.
+#
+# `tabular` powers dscraft.automl (model-selection surface: build_model's
+# XGBoost/LightGBM/CatBoost backends, HDBSCAN clustering, imbalanced-learn
+# resampling). numpy/pandas/scipy windows are IDENTICAL across tabular,
+# forecast and eda so any combination co-resolves.
+tabular = [
+    "numpy>=1.26,<2.2",
+    "pandas>=2.1,<2.3",
+    "scikit-learn>=1.4,<1.6",
+    "scipy>=1.11,<1.14",
+    "xgboost>=2.0,<3",
+    "lightgbm>=4.0,<5",
+    "catboost>=1.2,<2",
+    "imbalanced-learn>=0.12,<0.13",
+]
+# `forecast` powers dscraft.forecast (StatsForecast classical models +
+# backtest + STL/MSTL decomposition). scipy is listed here explicitly --
+# dscraft/forecast/decomposition.py imports scipy at MODULE level
+# (scipy.special.inv_boxcox, scipy.stats.boxcox), so `import
+# dscraft.forecast` hard-requires scipy; the legacy `forecast` extra below
+# omitted it and only worked by relying on statsforecast/statsmodels to
+# pull scipy in transitively. This group fixes that latent gap.
+forecast = [
+    "numpy>=1.26,<2.2",
+    "pandas>=2.1,<2.3",
+    "scipy>=1.11,<1.14",
+    "statsforecast>=1.7,<2.1",
+    "statsmodels>=0.14,<0.15",
+    "utilsforecast>=0.2,<0.3",
+]
+# `eda` powers dscraft.eda (Polars lazy profiling + DataSketches HLL/KLL +
+# SciPy association matrix). plotnine plotting stays an opt-in add-on via
+# the existing `eda-plotnine` extra (not part of the conflict-free core).
+eda = [
+    "numpy>=1.26,<2.2",
+    "scipy>=1.11,<1.14",
+    "polars>=0.20,<1.1",
+    "datasketches>=5.0,<6",
+]
+# `analytics`: the union a typical tabular/forecast/eda consumer installs
+# with a single extra. Kept in sync with `_versions.ANALYTICS_GROUPS`.
+analytics = [
+    "dscraft[tabular]",
+    "dscraft[forecast]",
+    "dscraft[eda]",
+]
+
+# ---------------------------------------------------------------------------
+# Legacy per-subpackage extras (open floors) -- retained for compatibility
+# ---------------------------------------------------------------------------
 # Per-subpackage extras. Installing the base package (`pip install dscraft`)
 # pulls in only `core` (opentelemetry-api, near-zero deps, see dependencies
 # above) -- every subpackage's own dependency universe is opt-in via these
@@ -115,12 +189,16 @@ clean = [
 # test_datasetsforecast_validation.py skips (rather than fails) if that
 # download is unavailable, so this dependency never makes the rest of the
 # suite require network access.
-forecast = [
-    "numpy>=1.24",
-    "pandas>=2.0",
-    "statsforecast>=1.7",
-    "statsmodels>=0.14",
-    "utilsforecast>=0.2",
+# NOTE: the pinned runtime version windows for this subpackage now live in
+# the curated `forecast` capability group near the top of this table (part
+# of the conflict-free `analytics` set). This legacy name is retained --
+# the CI matrix and `dscraft[forecast,dev]` reference it -- but is now
+# defined as `dscraft[forecast]` plus forecast's TEST-ONLY benchmark-data
+# dependency (datasetsforecast), which is deliberately NOT in the
+# conflict-free runtime group. See the curated group above for why scipy is
+# now an explicit member (module-level import in decomposition.py).
+forecast-tests = [
+    "dscraft[forecast]",
     "datasetsforecast>=0.0.8",
 ]
 # Module 4 (LazyGraph): sparse graph tensor adapter + MPNNs -- torch and
@@ -219,11 +297,12 @@ agent = []
 # DuckDB-specific need (e.g. SQL-expression-based profiling) emerges
 # later, add it as its own opt-in extra at that point rather than
 # reflexively now.
-eda = [
-    "polars>=0.20",
-    "datasketches>=5.0",
-    "scipy>=1.11",
-]
+# NOTE: the pinned runtime version windows for this subpackage now live in
+# the curated `eda` capability group near the top of this table (part of
+# the conflict-free `analytics` set). That group carries the same
+# polars/datasketches/scipy deps (plus an explicit numpy pin) with tested
+# `>=min,<below` windows instead of open floors, so this legacy duplicate
+# definition has been removed to keep `eda` single-sourced.
 # `eda`'s optional plotnine-backed grammar-of-graphics plotting path only
 # (dscraft/eda/plots.py) -- plotnine pulls in matplotlib (and pandas) on
 # top of everything the base `eda` extra above already needs, and neither

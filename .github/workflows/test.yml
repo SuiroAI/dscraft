@@ -44,8 +44,12 @@ jobs:
           - subpackage: clean
             extras: "clean,dev"
             runs-on: ubuntu-latest
+          # Uses `forecast-tests` (= dscraft[forecast] + the test-only
+          # datasetsforecast benchmark-data dep) so the forecast suite still
+          # has its M3/M4/M5 fixtures. The runtime `forecast` extra itself is
+          # now a pinned, conflict-free capability group (see pyproject.toml).
           - subpackage: forecast
-            extras: "forecast,dev"
+            extras: "forecast-tests,dev"
             runs-on: ubuntu-latest
           # Heavy: torch + torch_geometric.
           - subpackage: graph
@@ -100,6 +104,52 @@ jobs:
 
       - name: Run pytest
         run: pytest packages/dscraft/tests/${{ matrix.subpackage }}
+
+  # Proves dscraft's "one dependency, conflict-free versions" contract for
+  # the tabular/forecast/eda capability groups: each group, and their
+  # `analytics` union, must co-install from the pinned pyproject windows AND
+  # import cleanly AND pass dscraft.validate_environment(...) against the
+  # known-good set in src/dscraft/_versions.py. If the pinned ranges ever
+  # drift out of sync with _versions.py (or stop co-resolving), this fails.
+  analytics-conflict-free:
+    name: analytics co-install + validate (${{ matrix.group }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - group: tabular
+            import_modules: "dscraft.automl"
+          - group: forecast
+            import_modules: "dscraft.forecast"
+          - group: eda
+            import_modules: "dscraft.eda"
+          # The union a real consumer (e.g. SuiroAI) installs -- the case
+          # that actually proves the three groups co-resolve together.
+          - group: analytics
+            import_modules: "dscraft.automl dscraft.forecast dscraft.eda"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: packages/dscraft/pyproject.toml
+
+      - name: Install dscraft[${{ matrix.group }}]
+        run: pip install -e "packages/dscraft[${{ matrix.group }}]"
+
+      - name: Import the group's subpackage(s)
+        run: python -c "import importlib, sys; [importlib.import_module(m) for m in sys.argv[1:]]" ${{ matrix.import_modules }}
+
+      - name: Validate environment against the known-good set
+        run: python -c "import dscraft; print(dscraft.validate_environment('${{ matrix.group }}' if '${{ matrix.group }}' != 'analytics' else None))"
 
   # Lightweight "doc testing" companion to the pytest matrix above: this
   # only checks that every packages/dscraft/examples/*/*.py script is at
