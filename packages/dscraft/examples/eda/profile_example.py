@@ -35,11 +35,18 @@ def _build_synthetic_dataframe() -> pl.DataFrame:
     # to report.
     ages = [None if i % 37 == 0 else age for i, age in enumerate(ages)]
 
+    # A second numeric column, loosely correlated with age, so the PCA readout has >=2 numeric
+    # columns to work with.
+    spend = [round(50.0 + age_i * 1.3 + (i % 11), 2) for i, age_i in enumerate(
+        (a if a is not None else 40.0) for a in ages
+    )]
+
     return pl.DataFrame(
         {
             "customer_id": [f"cust-{i:06d}" for i in range(ROWS)],  # high-cardinality string
             "country": [countries[i % len(countries)] for i in range(ROWS)],  # low-cardinality
             "age": ages,  # numeric, with nulls
+            "monthly_spend": spend,  # second numeric column
             "is_subscribed": [i % 3 == 0 for i in range(ROWS)],  # boolean
         }
     )
@@ -75,6 +82,29 @@ def main() -> None:
         print(f"Association matrix computed across columns: {profile.association_matrix.columns}")
         if profile.association_matrix.unavailable_pairs:
             print(f"  Unavailable pairs: {list(profile.association_matrix.unavailable_pairs)}")
+
+    # First-party EDA-breadth readouts added by the automl/eda rebuild.
+    if "age" in profile.numeric_descriptors:
+        d = profile.numeric_descriptors["age"]
+        print()
+        print(
+            f"Univariate (age): mean={d.mean:.1f} median={d.median:.1f} "
+            f"std={d.std:.1f} skew={d.skewness:.2f}"
+        )
+    if "age" in profile.column_outliers:
+        o = profile.column_outliers["age"]
+        print(f"Outlier screen (age, {o.method}): {o.n_outliers} flagged ({o.fraction:.1%})")
+    if "country" in profile.categorical_descriptors:
+        c = profile.categorical_descriptors["country"]
+        print(
+            f"Categorical (country): distinct={c.distinct} mode={c.mode!r} "
+            f"norm_entropy={c.normalized_entropy:.2f}"
+        )
+    if profile.pca is not None:
+        print(
+            f"PCA over numeric columns: {profile.pca.n_components} components, "
+            f"{profile.pca.n_components_for_90pct} explain 90% of variance"
+        )
 
     output_path = Path(tempfile.gettempdir()) / "dscraft_eda_profile_example.html"
     profile.export(output_path)
