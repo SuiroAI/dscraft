@@ -114,13 +114,21 @@ scikit-learn install required at serving time. Base runtime deps
 lazily imported) install via the separate `automl-onnx` extra.
 
 `dscraft.automl.build_model(name, task, **kwargs)` builds an unfitted,
-sklearn-compatible gradient-boosted-tree estimator from a caller-selected
-backend -- XGBoost, LightGBM, or CatBoost, all three equally supported per
-this project's multi-backend design principle (none is a "default").
-`SUPPORTED_CLASSIFIERS`/`SUPPORTED_REGRESSORS` are the name -> class
-allowlists `build_model` dispatches through, mirroring
-`dscraft.forecast`'s `SUPPORTED_MODELS` pattern. All three libraries are
-base runtime deps of the `automl` extra (not a separate extra).
+sklearn-compatible estimator from a caller-selected backend, all equally
+supported per this project's multi-backend design principle (none is a
+"default"). `SUPPORTED_CLASSIFIERS`/`SUPPORTED_REGRESSORS` are the name ->
+class allowlists `build_model` dispatches through, mirroring
+`dscraft.forecast`'s `SUPPORTED_MODELS` pattern. Alongside the
+gradient-boosted-tree backends (XGBoost/LightGBM/CatBoost), the allowlist
+now also exposes **first-party** backends built from scratch on numpy --
+`DSLinear` (OLS/ridge/lasso/elastic-net regression,
+`dscraft.automl._linear.DSLinearRegressor`) and `DSLogistic` (binary IRLS /
+multiclass one-vs-rest logistic regression,
+`dscraft.automl._linear.DSLogisticClassifier`) -- the first installments of
+the first-party automl/eda rebuild (see
+`docs/decisions/2026-10-first-party-automl-eda-rebuild.md`), which is
+progressively replacing the third-party *algorithm* backends with in-house
+implementations.
 
 `dscraft.automl.build_clusterer(name, **kwargs)` builds an unfitted,
 sklearn-compatible clustering estimator -- currently HDBSCAN, via

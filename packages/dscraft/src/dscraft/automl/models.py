@@ -37,6 +37,8 @@ from catboost import CatBoostClassifier, CatBoostRegressor
 from lightgbm import LGBMClassifier, LGBMRegressor
 from xgboost import XGBClassifier, XGBRegressor
 
+from dscraft.automl._linear import DSLinearRegressor, DSLogisticClassifier
+
 __all__ = [
     "SUPPORTED_CLASSIFIERS",
     "SUPPORTED_REGRESSORS",
@@ -46,27 +48,42 @@ __all__ = [
 #: Concrete estimator types this module ever builds. CatBoost's estimators
 #: do not reliably inherit from `sklearn.base.BaseEstimator` across
 #: catboost versions, so this module widens to an explicit union of the
-#: six concrete classes actually returned, rather than annotating against
-#: `BaseEstimator`.
-_ClassifierType = XGBClassifier | LGBMClassifier | CatBoostClassifier
-_RegressorType = XGBRegressor | LGBMRegressor | CatBoostRegressor
+#: concrete classes actually returned, rather than annotating against
+#: `BaseEstimator`. The first-party `DS*` backends (see `_linear.py`, and
+#: the first-party boosting/forest backends added by the automl/eda
+#: rebuild) are included here too.
+_ClassifierType = (
+    XGBClassifier | LGBMClassifier | CatBoostClassifier | DSLogisticClassifier
+)
+_RegressorType = XGBRegressor | LGBMRegressor | CatBoostRegressor | DSLinearRegressor
 
 #: Classification backends this module supports, keyed by caller-facing
-#: name. All three are equally-supported options (multi-backend design
+#: name. All are equally-supported options (multi-backend design
 #: principle) -- none is a "default"; the caller must name one explicitly
-#: via :func:`build_model`.
+#: via :func:`build_model`. `DSLogistic` is the first-party logistic-
+#: regression backend (`dscraft.automl._linear.DSLogisticClassifier`),
+#: added by the first-party automl/eda rebuild (see
+#: docs/decisions/2026-10-first-party-automl-eda-rebuild.md); the
+#: third-party XGBoost/LightGBM/CatBoost entries are retired in a later
+#: step of that rebuild once their first-party boosting/forest
+#: replacements land.
 SUPPORTED_CLASSIFIERS: dict[str, type[_ClassifierType]] = {
     "XGBoost": XGBClassifier,
     "LightGBM": LGBMClassifier,
     "CatBoost": CatBoostClassifier,
+    "DSLogistic": DSLogisticClassifier,
 }
 
 #: Regression backends this module supports, keyed by caller-facing name.
-#: Same multi-backend posture as :data:`SUPPORTED_CLASSIFIERS`.
+#: Same multi-backend posture as :data:`SUPPORTED_CLASSIFIERS`. `DSLinear`
+#: is the first-party linear-regression backend
+#: (`dscraft.automl._linear.DSLinearRegressor`, supporting OLS/ridge/lasso/
+#: elastic-net), added by the first-party automl/eda rebuild.
 SUPPORTED_REGRESSORS: dict[str, type[_RegressorType]] = {
     "XGBoost": XGBRegressor,
     "LightGBM": LGBMRegressor,
     "CatBoost": CatBoostRegressor,
+    "DSLinear": DSLinearRegressor,
 }
 
 #: Valid ``task`` values for :func:`build_model`, mapped to the allowlist

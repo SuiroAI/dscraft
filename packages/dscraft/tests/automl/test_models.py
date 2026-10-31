@@ -19,8 +19,29 @@ from dscraft.automl.models import build_model as build_model_direct
 def test_public_api_surface() -> None:
     """`build_model`/`SUPPORTED_*` are importable from `dscraft.automl` itself."""
     assert build_model is build_model_direct
-    assert set(SUPPORTED_CLASSIFIERS) == {"XGBoost", "LightGBM", "CatBoost"}
-    assert set(SUPPORTED_REGRESSORS) == {"XGBoost", "LightGBM", "CatBoost"}
+    assert set(SUPPORTED_CLASSIFIERS) == {"XGBoost", "LightGBM", "CatBoost", "DSLogistic"}
+    assert set(SUPPORTED_REGRESSORS) == {"XGBoost", "LightGBM", "CatBoost", "DSLinear"}
+
+
+def test_first_party_classifier_backend_fit_predict() -> None:
+    """The first-party `DSLogistic` backend fits/predicts via the public factory."""
+    X, y = load_iris(return_X_y=True)
+    X_train, X_test, y_train, _y_test = train_test_split(X, y, test_size=0.25, random_state=0)
+    model = build_model("DSLogistic", "classification", C=10.0)
+    model.fit(X_train, y_train)
+    predictions = model.predict(X_test)
+    assert len(predictions) == len(X_test)
+    assert np.isin(np.asarray(predictions).ravel(), np.unique(y)).all()
+
+
+def test_first_party_regressor_backend_fit_predict() -> None:
+    """The first-party `DSLinear` backend fits/predicts via the public factory."""
+    X, y = load_diabetes(return_X_y=True)
+    X_train, X_test, y_train, _y_test = train_test_split(X, y, test_size=0.25, random_state=0)
+    model = build_model("DSLinear", "regression", alpha=0.1, l1_ratio=0.0)
+    model.fit(X_train, y_train)
+    predictions = model.predict(X_test)
+    assert len(predictions) == len(X_test)
 
 
 @pytest.mark.parametrize("name", ["XGBoost", "LightGBM", "CatBoost"])
