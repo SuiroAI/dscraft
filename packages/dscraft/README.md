@@ -29,7 +29,7 @@ what's here today and how to install/run it.
 | Subpackage | Extra | What it does |
 |---|---|---|
 | [`dscraft.core`](#dscraftcore) | *(base install)* | Shared substrate: three-tier data conventions, OTel GenAI telemetry helpers, license-isolation policy, shared sandbox executor. |
-| [`dscraft.automl`](#dscraftautoml) | `automl` (+ `automl-onnx`) | First-party tabular AutoML — `.compile()` fuses a fitted `sklearn.pipeline.Pipeline` into one portable ONNX graph via `skl2onnx`; `build_model` offers first-party linear/logistic, gradient-boosting, and random-forest/extra-trees backends (built from scratch on numpy, no boosting library); `build_clusterer`/`build_resampler` add HDBSCAN and imbalanced-learn backends. |
+| [`dscraft.automl`](#dscraftautoml) | `automl` (+ `automl-onnx`) | First-party tabular AutoML — `.compile()` fuses a fitted `sklearn.pipeline.Pipeline` into one portable ONNX graph via `skl2onnx`; `build_model` offers first-party linear/logistic, gradient-boosting, and random-forest/extra-trees backends (built from scratch on numpy, no boosting library); `build_resampler` adds first-party random/SMOTE/borderline-SMOTE over-sampling and random under-sampling; `build_clusterer` adds an HDBSCAN backend. |
 | [`dscraft.clean`](#dscraftclean) | `clean` | Data-quality firewall — the composed `Sanitizer` entrypoint (DeCoLe label-error detection, train/test contamination auditing, Dataset Integrity Score), plus lower-level ONNX Runtime (PyTorch-free) text *and* image embeddings feeding cosine-similarity near-duplicate detection. |
 | [`dscraft.forecast`](#dscraftforecast) | `forecast` | Classical statistical forecasting (13 `statsforecast` models: AutoARIMA/AutoETS/AutoCES/AutoTheta autofits, simple baselines, Croston) over a Tier-1 Arrow-backed pipeline, `utilsforecast`-scored backtesting, and standalone STL/MSTL (+ Box-Cox) decomposition. |
 | [`dscraft.graph`](#dscraftgraph) | `graph` | Sparse graph ML — a concrete Tier-2 COO↔CSR/CSC tensor adapter (PyG↔SciPy) plus a minimal GCN forward pass. |
@@ -143,11 +143,14 @@ needed), exposed through `SUPPORTED_CLUSTERERS`. This is an independent,
 unsupervised capability -- it does not require the supervised model
 allowlist above.
 
-`dscraft.automl.build_resampler(name, **kwargs)` builds an unfitted
-`imbalanced-learn` resampler -- `RandomOverSampler`, `SMOTE`, or
-`RandomUnderSampler`, exposed through `SUPPORTED_RESAMPLERS` -- for
-rebalancing a skewed classification training set ahead of the classifier
-path above. `imbalanced-learn` is a base runtime dep of the `automl`
+`dscraft.automl.build_resampler(name, **kwargs)` builds an unfitted,
+**first-party** resampler exposing `fit_resample(X, y)` --
+`RandomOverSampler`, `SMOTE`, `BorderlineSMOTE`, or `RandomUnderSampler`,
+exposed through `SUPPORTED_RESAMPLERS` -- for rebalancing a skewed
+classification training set ahead of the classifier path above. These are
+built from scratch on numpy (`dscraft.automl._resampling`); the third-party
+`imbalanced-learn` backend this used to wrap was removed by the first-party
+automl/eda rebuild, so no resampling library is a dependency of the `automl`
 extra.
 
 ## `dscraft.clean`

@@ -40,13 +40,17 @@ dependencies = [
 # rebuild (see docs/decisions/2026-10-first-party-automl-eda-rebuild.md) --
 # their capability is now the first-party `DSBoost` backend, so no boosting
 # library is a dependency of this package anymore. `imbalanced-learn`
-# (dscraft.automl.resampling) remains for now; its first-party replacement
-# lands in a later step of the same rebuild.
+# (dscraft.automl.resampling) was likewise REMOVED by the same rebuild --
+# RandomOverSampler/SMOTE/BorderlineSMOTE/RandomUnderSampler are now
+# first-party (dscraft.automl._resampling), so no resampling library is a
+# dependency either. The only remaining third-party algorithm backend in
+# this extra is scikit-learn's HDBSCAN (dscraft.automl.clustering), whose
+# first-party replacement lands in a later step of the same rebuild; until
+# then scikit-learn stays (also used for its estimator-protocol plumbing).
 automl = [
     "numpy>=1.24",
     "pandas>=2.0",
     "scikit-learn>=1.3",
-    "imbalanced-learn>=0.12",
 ]
 # AutoML's `.compile()` ONNX export path only -- skl2onnx/onnx/onnxruntime
 # are lazily imported inside dscraft.automl.compile (see
@@ -243,7 +247,6 @@ all = [
     "numpy>=1.24",
     "pandas>=2.0",
     "scikit-learn>=1.3",
-    "imbalanced-learn>=0.12",
     "skl2onnx>=1.16",
     "onnx>=1.15",
     "onnxruntime>=1.17",
