@@ -189,14 +189,14 @@ security = []
 # subpackage-specific dependency.
 agent = []
 # Module 10 (LazyEDA, now `eda`): lazy Polars profiling (engine.py) +
-# Apache DataSketches HLL/KLL sketches (sketches.py) + a SciPy-based
-# association-matrix suite (associations.py) + a dependency-free HTML/
-# Canvas report renderer (report.py). `datasketches` is a hard runtime
-# dependency here (not a further-nested optional extra) -- see
-# sketches.py's module docstring for why HLL/KLL cardinality/quantile
-# estimation *is* this subpackage's signature scalable-profiling
-# capability, not an optional add-on bolted onto something with other
-# things to do without it. `polars` is pinned to the same floor as the
+# first-party HLL/KLL sketches (sketches.py, backed by _hll.py/_kll.py) +
+# a SciPy-based association-matrix suite (associations.py) + a
+# dependency-free HTML/Canvas report renderer (report.py). The HLL/KLL
+# sketch *algorithms* are now first-party (built from scratch on numpy) --
+# the Apache `datasketches` dependency this extra originally carried was
+# REMOVED by the first-party automl/eda rebuild (see
+# docs/decisions/2026-10-first-party-automl-eda-rebuild.md), so no sketch
+# library is a dependency here. `polars` is pinned to the same floor as the
 # `dev` extra's own polars pin below (both need Polars' lazy-execution
 # API; keeping the two floors in sync avoids two different minimum
 # versions of the same library across extras of one package). `scipy` is
@@ -219,7 +219,6 @@ agent = []
 # reflexively now.
 eda = [
     "polars>=0.20",
-    "datasketches>=5.0",
     "scipy>=1.11",
 ]
 # `eda`'s optional plotnine-backed grammar-of-graphics plotting path only
@@ -265,7 +264,6 @@ all = [
     "transformers>=4.40",
     "peft>=0.10",
     "polars>=0.20",
-    "datasketches>=5.0",
     "plotnine>=0.13",
 ]
 

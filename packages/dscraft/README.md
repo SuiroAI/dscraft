@@ -316,8 +316,10 @@ extra heavy runtime deps beyond `dscraft.core` itself — install via the
 `LazyEDA` is the single entry point over four independently-built pieces:
 a lazy-Polars profiling `engine` (schema + per-column null counts + row
 count, computed without materializing a source's full data), `sketches`
-(HyperLogLog cardinality and KLL quantile estimation, via the Apache
-Software Foundation's `datasketches` library), `associations` (a mixed
+(first-party HyperLogLog cardinality and KLL quantile estimation, built
+from scratch on numpy in `_hll.py`/`_kll.py` -- the Apache `datasketches`
+dependency this used to wrap was removed by the first-party automl/eda
+rebuild), `associations` (a mixed
 continuous/categorical/mixed-type pairwise correlation/association-matrix
 suite built on SciPy), and a `report` renderer that turns already-
 aggregated summaries into one self-contained, offline-friendly HTML/Canvas

@@ -10,54 +10,25 @@ implementations** built from scratch on ``numpy`` (plus ``hashlib`` for HLL):
 ``HLLResult``/``KLLResult`` public result types and documented error-bound semantics are unchanged
 by the swap, so callers (notably ``LazyEDA``) are unaffected.
 
-**Real installed API used here** (``pip install datasketches``, verified
-against the installed package via ``help(datasketches.hll_sketch)`` /
-``help(datasketches.kll_floats_sketch)`` -- the docstring text quoted below
-is the library's own):
+**First-party implementations (no third-party sketch library).** The HLL and KLL algorithms live
+in :mod:`dscraft.eda._hll` and :mod:`dscraft.eda._kll` respectively, built from scratch on
+``numpy`` (plus ``hashlib`` for HLL's stable hashing). This module keeps a thin, validated public
+surface over them:
 
-- :class:`datasketches.hll_sketch` -- constructor is
-  ``hll_sketch(lg_k: int, tgt_type: tgt_hll_type = tgt_hll_type.HLL_8, ...)``
-  (the parameter is named ``lg_k``, not ``log2_k`` -- this module's public
-  ``log2_k`` parameter name matches the task's requested interface and is
-  passed through positionally). ``lg_k`` must be in ``[7, 21]``; the sketch
-  raises its own ``ValueError`` outside that range, which this module
-  re-raises with a clearer message before ever constructing the sketch.
-  Values are fed in via ``.update(datum)``, overloaded for ``int``/``float``/
-  ``str`` only (not arbitrary hashables) -- see :func:`estimate_cardinality`
-  for how this module bridges that gap. The estimate is read back via
-  ``.get_estimate() -> float``.
-- :class:`datasketches.kll_floats_sketch` -- constructor is
-  ``kll_floats_sketch(k: int = 200)``; ``k`` must be in ``[8, 65535]`` (the
-  sketch raises its own ``ValueError`` outside that range, likewise
-  re-raised here first with a clearer message). Values are fed in via
-  ``.update(item: float)``. Quantiles are read back via
-  ``.get_quantiles(ranks: Sequence[float]) -> list[float]``, and the
-  sketch's own documented rank-error bound via
-  ``.normalized_rank_error(as_pmf: bool) -> float`` (the single-sided,
-  non-PMF bound -- ``as_pmf=False`` -- is what applies to individual
-  ``get_quantile``/``get_quantiles`` calls, which is what this module uses;
-  see :class:`KLLResult`).
+- :func:`estimate_cardinality` -> :class:`dscraft.eda._hll.HyperLogLog`. The caller-facing
+  ``log2_k`` parameter must be in ``[7, 21]`` (validated here with a clear message before the
+  sketch is constructed). ``int``/``float``/``str`` values are hashed directly; any other item is
+  ``str()``-coerced (see :func:`estimate_cardinality` for the narrow collision caveat). The RSE is
+  the family-wide ``1.04 / sqrt(2**log2_k)``.
+- :func:`estimate_quantiles` -> :class:`dscraft.eda._kll.KLL`. The caller-facing ``k`` parameter
+  must be in ``[8, 65535]`` (validated here). Values must be finite, numeric, non-``bool``. The
+  reported ``normalized_rank_error`` is KLL's published single-sided bound (``~2.296 / k``). The
+  sketch uses a fixed internal seed so repeated calls on the same data are deterministic.
 
-**Hard dependency, not a further-nested optional extra.** Unlike
-``dscraft.automl.compile``'s ``onnx``/``skl2onnx`` stack (imported lazily
-inside :func:`dscraft.automl.compile.compile`, guarded by
-``ONNXExtraNotInstalledError``, so that plain ``dscraft[automl]`` never
-force-installs the ONNX toolchain for callers who only need
-``fit``/``predict``), ``datasketches`` is not an optional capability bolted
-onto a broader subpackage that has other things to do without it -- sketch-
-based cardinality/quantile estimation *is* the scalable-single-pass-
-profiling capability the ``eda`` subpackage exists to provide (see the
-architecture doc's EDA scope). There is no meaningful "import
-``dscraft.eda`` without ``datasketches``" use case the way there is a
-meaningful "``fit``/``predict`` a pipeline without ever calling
-``.compile()``" use case in AutoML. This module therefore imports
-``datasketches`` unconditionally at module level and lets a missing install
-fail with Python's normal ``ModuleNotFoundError`` at
-``import dscraft.eda.sketches`` time -- no custom wrapper exception, no
-lazy/deferred import. The wiring implication (left to the ``eda`` extra's
-definition in ``pyproject.toml``, not touched by this file) is that
-``datasketches`` belongs in the base ``eda`` extra's dependency list
-alongside ``numpy``/``polars``, not a separate ``eda-sketches`` sub-extra.
+Both sketch *algorithms* were previously wrapped from the Apache ``datasketches`` library; the
+first-party automl/eda rebuild (see ``docs/decisions/2026-10-first-party-automl-eda-rebuild.md``)
+replaced them, and ``datasketches`` is no longer a dependency of the ``eda`` extra. The public
+``HLLResult``/``KLLResult`` result types and their documented error-bound semantics are unchanged.
 
 **Empty-input behavior: raise ``ValueError``, consistently for both
 sketches.** A cardinality or quantile estimate over zero values is not a
