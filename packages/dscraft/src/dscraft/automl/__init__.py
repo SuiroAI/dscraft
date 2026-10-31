@@ -13,8 +13,11 @@ package README for details and clean-room provenance), plus:
   automl/eda rebuild, with the third-party XGBoost/LightGBM/CatBoost
   backends removed; see
   docs/decisions/2026-10-first-party-automl-eda-rebuild.md);
-- an unsupervised clustering allowlist (`clustering.py`: HDBSCAN via
-  scikit-learn's built-in `sklearn.cluster.HDBSCAN`), independent of the
+- an unsupervised clustering allowlist (`clustering.py`: first-party
+  `DSKMeans`/`DSDBSCAN`/`DSAgglomerative`/`DSHDBSCAN`, built from scratch on
+  numpy in `_clustering.py` -- the `sklearn.cluster.HDBSCAN` backend it
+  originally wrapped was replaced by the first-party `DSHDBSCAN`, with
+  `"HDBSCAN"` kept as a backward-compatible alias), independent of the
   supervised model-selection surface; and
 - an imbalanced-class resampling allowlist (`resampling.py`: first-party
   `RandomOverSampler`/`SMOTE`/`BorderlineSMOTE`/`RandomUnderSampler`, built

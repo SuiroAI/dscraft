@@ -17,7 +17,25 @@ from dscraft.automl.clustering import build_clusterer as build_clusterer_direct
 def test_public_api_surface() -> None:
     """`build_clusterer`/`SUPPORTED_CLUSTERERS` are importable from `dscraft.automl`."""
     assert build_clusterer is build_clusterer_direct
-    assert set(SUPPORTED_CLUSTERERS) == {"DSKMeans", "DSDBSCAN", "HDBSCAN"}
+    assert set(SUPPORTED_CLUSTERERS) == {
+        "DSKMeans", "DSDBSCAN", "DSAgglomerative", "DSHDBSCAN", "HDBSCAN",
+    }
+
+
+def test_hdbscan_name_is_first_party_alias() -> None:
+    """The legacy `"HDBSCAN"` name now resolves to the first-party DSHDBSCAN, not sklearn's."""
+    from dscraft.automl._clustering import DSHDBSCAN
+
+    assert SUPPORTED_CLUSTERERS["HDBSCAN"] is DSHDBSCAN
+    assert SUPPORTED_CLUSTERERS["DSHDBSCAN"] is DSHDBSCAN
+
+
+def test_first_party_agglomerative_backend_smoke() -> None:
+    """The first-party `DSAgglomerative` backend clusters blobs via the public factory."""
+    X, _y = make_blobs(n_samples=120, centers=3, cluster_std=0.5, random_state=0)
+    clusterer = build_clusterer("DSAgglomerative", n_clusters=3, linkage="ward")
+    labels = clusterer.fit_predict(X)
+    assert len(set(labels)) == 3
 
 
 def test_first_party_kmeans_backend_smoke() -> None:

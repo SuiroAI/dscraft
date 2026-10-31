@@ -137,11 +137,17 @@ rebuild (see `docs/decisions/2026-10-first-party-automl-eda-rebuild.md`),
 which makes the modeling, boosting, and techniques our own end to end.
 
 `dscraft.automl.build_clusterer(name, **kwargs)` builds an unfitted,
-sklearn-compatible clustering estimator -- currently HDBSCAN, via
-scikit-learn's own built-in `sklearn.cluster.HDBSCAN` (no new dependency
-needed), exposed through `SUPPORTED_CLUSTERERS`. This is an independent,
-unsupervised capability -- it does not require the supervised model
-allowlist above.
+sklearn-compatible clustering estimator from a caller-selected backend,
+exposed through `SUPPORTED_CLUSTERERS`. All are **first-party**
+implementations built from scratch on numpy (`dscraft.automl._clustering`),
+spanning the major clustering styles: `DSKMeans` (centroid-based),
+`DSDBSCAN` (density-based), `DSAgglomerative` (hierarchical agglomerative,
+ward/complete/average/single linkage), and `DSHDBSCAN` (hierarchical
+density-based, HDBSCAN*). The `sklearn.cluster.HDBSCAN` backend this used to
+wrap was replaced by the first-party `DSHDBSCAN` as part of the first-party
+automl/eda rebuild (the legacy `"HDBSCAN"` name is kept as an alias). This
+is an independent, unsupervised capability -- it does not require the
+supervised model allowlist above.
 
 `dscraft.automl.build_resampler(name, **kwargs)` builds an unfitted,
 **first-party** resampler exposing `fit_resample(X, y)` --
