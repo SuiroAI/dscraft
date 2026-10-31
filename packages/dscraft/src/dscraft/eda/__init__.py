@@ -141,6 +141,11 @@ from dscraft.eda._outliers import (
     iqr_outliers,
     mad_outliers,
 )
+from dscraft.eda._temporal import (
+    TemporalDescriptor,
+    autocorrelation,
+    temporal_descriptor,
+)
 
 __all__ = [
     "EDAProfile",
@@ -150,6 +155,8 @@ __all__ = [
     "NumericDescriptor",
     "ColumnOutlierReport",
     "IsolationForest",
+    "TemporalDescriptor",
+    "autocorrelation",
     "iqr_outliers",
     "mad_outliers",
     "association_heatmap",
@@ -174,6 +181,10 @@ _NUMERIC_CATEGORY: ColumnCategory = "numeric"
 #: Column categories that receive a cardinality/top-K-histogram
 #: categorical-sketch pass.
 _STRING_CATEGORY: ColumnCategory = "string"
+
+#: Column category that receives a temporal-coverage/cadence descriptor pass
+#: (see :mod:`dscraft.eda._temporal`). Previously a no-sketch category.
+_TEMPORAL_CATEGORY: ColumnCategory = "temporal"
 
 
 def _quantile_label(q: float) -> str:
@@ -288,6 +299,12 @@ class EDAProfile:
             ``"numeric"`` column with at least one finite value -- a
             univariate outlier screen (IQR fences by default, or robust
             MAD z-score; see :class:`LazyEDA`'s ``outlier_method``).
+        temporal_descriptors: a mapping of column name to
+            :class:`~dscraft.eda._temporal.TemporalDescriptor` for every
+            ``"temporal"`` (date/datetime) column with at least one
+            non-null value -- range coverage, cadence, gap detection,
+            monotonicity/duplicates. Previously ``"temporal"`` columns got
+            only a schema/null summary.
     """
 
     def __init__(
@@ -303,6 +320,7 @@ class EDAProfile:
         numeric_descriptors: Optional[dict[str, NumericDescriptor]] = None,
         categorical_descriptors: Optional[dict[str, CategoricalDescriptor]] = None,
         column_outliers: Optional[dict[str, ColumnOutlierReport]] = None,
+        temporal_descriptors: Optional[dict[str, TemporalDescriptor]] = None,
     ) -> None:
         self.schema_report = schema_report
         self.null_report = null_report
@@ -315,6 +333,9 @@ class EDAProfile:
             categorical_descriptors if categorical_descriptors is not None else {}
         )
         self.column_outliers = column_outliers if column_outliers is not None else {}
+        self.temporal_descriptors = (
+            temporal_descriptors if temporal_descriptors is not None else {}
+        )
         self._report_data = report_data
 
     @property
@@ -440,6 +461,7 @@ class LazyEDA:
         numeric_descriptors: dict[str, NumericDescriptor] = {}
         categorical_descriptors: dict[str, CategoricalDescriptor] = {}
         column_outliers: dict[str, ColumnOutlierReport] = {}
+        temporal_descriptors: dict[str, TemporalDescriptor] = {}
         column_summaries: list[ColumnSummary] = []
 
         for column in schema_report.columns:
@@ -454,6 +476,7 @@ class LazyEDA:
                     numeric_descriptors=numeric_descriptors,
                     categorical_descriptors=categorical_descriptors,
                     column_outliers=column_outliers,
+                    temporal_descriptors=temporal_descriptors,
                 )
             )
 
@@ -492,6 +515,7 @@ class LazyEDA:
             numeric_descriptors=numeric_descriptors,
             categorical_descriptors=categorical_descriptors,
             column_outliers=column_outliers,
+            temporal_descriptors=temporal_descriptors,
         )
 
     def _summarize_column(
@@ -506,6 +530,7 @@ class LazyEDA:
         numeric_descriptors: dict[str, NumericDescriptor],
         categorical_descriptors: dict[str, CategoricalDescriptor],
         column_outliers: dict[str, ColumnOutlierReport],
+        temporal_descriptors: dict[str, TemporalDescriptor],
     ) -> ColumnSummary:
         """Build one column's :class:`~dscraft.eda.report.ColumnSummary`.
 
@@ -564,8 +589,20 @@ class LazyEDA:
             histogram = _categorical_histogram(non_null_values, self._top_k_categories)
             # Concentration descriptor over the same non-null categorical values.
             categorical_descriptors[name] = categorical_descriptor(non_null_values)
-        # "boolean"/"temporal"/"other" columns intentionally get neither
-        # sketch -- see the module docstring's routing-heuristic section.
+        elif column.category == _TEMPORAL_CATEGORY:
+            # Temporal columns get a coverage/cadence descriptor (first-party temporal EDA).
+            # Convert the (non-null) temporal column to epoch seconds via Polars, then profile.
+            epoch_seconds = (
+                full_frame[name]
+                .drop_nulls()
+                .dt.epoch(time_unit="s")
+                .cast(pl.Float64)
+                .to_list()
+            )
+            if epoch_seconds:
+                temporal_descriptors[name] = temporal_descriptor(epoch_seconds)
+        # "boolean"/"other" columns intentionally get neither sketch nor
+        # descriptor -- see the module docstring's routing-heuristic section.
 
         return ColumnSummary(
             name=name,
