@@ -38,6 +38,12 @@ from lightgbm import LGBMClassifier, LGBMRegressor
 from xgboost import XGBClassifier, XGBRegressor
 
 from dscraft.automl._boosting import DSBoostClassifier, DSBoostRegressor
+from dscraft.automl._forest import (
+    DSExtraTreesClassifier,
+    DSExtraTreesRegressor,
+    DSRandomForestClassifier,
+    DSRandomForestRegressor,
+)
 from dscraft.automl._linear import DSLinearRegressor, DSLogisticClassifier
 
 __all__ = [
@@ -59,9 +65,17 @@ _ClassifierType = (
     | CatBoostClassifier
     | DSLogisticClassifier
     | DSBoostClassifier
+    | DSRandomForestClassifier
+    | DSExtraTreesClassifier
 )
 _RegressorType = (
-    XGBRegressor | LGBMRegressor | CatBoostRegressor | DSLinearRegressor | DSBoostRegressor
+    XGBRegressor
+    | LGBMRegressor
+    | CatBoostRegressor
+    | DSLinearRegressor
+    | DSBoostRegressor
+    | DSRandomForestRegressor
+    | DSExtraTreesRegressor
 )
 
 #: Classification backends this module supports, keyed by caller-facing
@@ -82,6 +96,8 @@ SUPPORTED_CLASSIFIERS: dict[str, type[_ClassifierType]] = {
     "CatBoost": CatBoostClassifier,
     "DSLogistic": DSLogisticClassifier,
     "DSBoost": DSBoostClassifier,
+    "DSRandomForest": DSRandomForestClassifier,
+    "DSExtraTrees": DSExtraTreesClassifier,
 }
 
 #: Regression backends this module supports, keyed by caller-facing name.
@@ -97,6 +113,8 @@ SUPPORTED_REGRESSORS: dict[str, type[_RegressorType]] = {
     "CatBoost": CatBoostRegressor,
     "DSLinear": DSLinearRegressor,
     "DSBoost": DSBoostRegressor,
+    "DSRandomForest": DSRandomForestRegressor,
+    "DSExtraTrees": DSExtraTreesRegressor,
 }
 
 #: Valid ``task`` values for :func:`build_model`, mapped to the allowlist

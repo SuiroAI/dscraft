@@ -124,11 +124,13 @@ allowlist now also exposes **first-party** backends built from scratch on
 numpy -- `DSLinear` (OLS/ridge/lasso/elastic-net regression,
 `dscraft.automl._linear.DSLinearRegressor`), `DSLogistic` (binary IRLS /
 multiclass one-vs-rest logistic regression,
-`dscraft.automl._linear.DSLogisticClassifier`), and `DSBoost` (second-order
+`dscraft.automl._linear.DSLogisticClassifier`), `DSBoost` (second-order
 gradient-boosted decision trees for both regression and binary/multiclass
 classification, `dscraft.automl._boosting`, the in-house replacement for the
-XGBoost/LightGBM/CatBoost backends). These are the first installments of the
-first-party automl/eda rebuild (see
+XGBoost/LightGBM/CatBoost backends), and the bagging-ensemble pair
+`DSRandomForest` / `DSExtraTrees` (`dscraft.automl._forest`, random forests
+and extremely-randomized trees for both tasks). These are the first
+installments of the first-party automl/eda rebuild (see
 `docs/decisions/2026-10-first-party-automl-eda-rebuild.md`), which is
 progressively replacing the third-party *algorithm* backends with in-house
 implementations.
