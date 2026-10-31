@@ -1,16 +1,16 @@
 """Probabilistic sketches for scalable single-pass column profiling.
 
-This module wraps two data structures from the Apache Software Foundation's
-`datasketches <https://datasketches.apache.org/>`_ library (Apache-2.0
-licensed Python bindings, package name ``datasketches`` on PyPI) rather than
-hand-rolling either from scratch. HyperLogLog (HLL) and KLL quantile sketches
-are genuinely subtle to implement correctly -- their value comes entirely
-from carefully-derived error-bound guarantees (register-count-vs-accuracy
-tradeoffs, compaction-schedule proofs), and DataSketches is a well-tested,
-permissively-licensed reference implementation of both. There is no
-LazyClean/LazyForecast-style "clean-room reimplementation" rationale here:
-unlike PyCaret (source-available, non-compete license, per CLAUDE.md's
-licensing policy), DataSketches is Apache-2.0 and safe to depend on directly.
+This module provides two probabilistic sketches: HyperLogLog (HLL) for distinct-count estimation
+and KLL for quantile estimation. As part of the first-party automl/eda rebuild (see
+``docs/decisions/2026-10-first-party-automl-eda-rebuild.md``), the **HLL sketch is now a first-party
+implementation** (:class:`dscraft.eda._hll.HyperLogLog`, built from scratch on ``numpy`` +
+``hashlib``) -- :func:`estimate_cardinality` no longer wraps ``datasketches.hll_sketch``. The KLL
+quantile sketch below still uses the Apache Software Foundation's
+`datasketches <https://datasketches.apache.org/>`_ library (Apache-2.0, package ``datasketches`` on
+PyPI); its first-party replacement is the next step of the same rebuild, after which the
+``datasketches`` dependency is removed entirely. The ``HLLResult``/``KLLResult`` public result
+types and documented error-bound semantics are unchanged by the swap, so callers (notably
+``LazyEDA``) are unaffected.
 
 **Real installed API used here** (``pip install datasketches``, verified
 against the installed package via ``help(datasketches.hll_sketch)`` /
@@ -80,7 +80,9 @@ import math
 from dataclasses import dataclass
 from typing import Iterable, Sequence
 
-from datasketches import hll_sketch, kll_floats_sketch
+from datasketches import kll_floats_sketch
+
+from dscraft.eda._hll import HyperLogLog
 
 __all__ = [
     "HLLResult",
@@ -217,16 +219,13 @@ def estimate_cardinality(values: Iterable, log2_k: int = 12) -> HLLResult:
             f"log2_k must be in [{_HLL_LOG2_K_MIN}, {_HLL_LOG2_K_MAX}], got {log2_k!r}."
         )
 
-    sketch = hll_sketch(log2_k)
+    sketch = HyperLogLog(log2_k)
     num_values_processed = 0
     for item in values:
-        if isinstance(item, (int, float, str)):
-            sketch.update(item)
-        else:
-            # hll_sketch.update() is only overloaded for int/float/str --
-            # see the docstring above for the narrow str()-collision caveat
-            # this introduces for non-primitive item types.
-            sketch.update(str(item))
+        # The first-party HyperLogLog hashes int/float/str directly and str()-coerces any other
+        # item type -- the same narrow str()-collision caveat documented above for non-primitive
+        # items applies, now in `dscraft.eda._hll._hash64` rather than the wrapped library.
+        sketch.update(item)
         num_values_processed += 1
 
     if num_values_processed == 0:
@@ -238,7 +237,7 @@ def estimate_cardinality(values: Iterable, log2_k: int = 12) -> HLLResult:
 
     relative_error = _HLL_RSE_COEFFICIENT / math.sqrt(2**log2_k)
     return HLLResult(
-        estimate=sketch.get_estimate(),
+        estimate=sketch.estimate(),
         relative_error=relative_error,
         log2_k=log2_k,
         num_values_processed=num_values_processed,
