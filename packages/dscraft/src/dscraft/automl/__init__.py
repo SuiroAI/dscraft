@@ -16,9 +16,12 @@ package README for details and clean-room provenance), plus:
 - an unsupervised clustering allowlist (`clustering.py`: HDBSCAN via
   scikit-learn's built-in `sklearn.cluster.HDBSCAN`), independent of the
   supervised model-selection surface; and
-- an imbalanced-class resampling allowlist (`resampling.py`:
-  `imbalanced-learn`'s `RandomOverSampler`/`SMOTE`/`RandomUnderSampler`),
-  an optional preprocessing step ahead of the classifier path.
+- an imbalanced-class resampling allowlist (`resampling.py`: first-party
+  `RandomOverSampler`/`SMOTE`/`BorderlineSMOTE`/`RandomUnderSampler`, built
+  from scratch on numpy in `_resampling.py` -- the third-party
+  `imbalanced-learn` backends it originally wrapped were replaced by the
+  first-party automl/eda rebuild), an optional preprocessing step ahead of
+  the classifier path.
 
 The streaming/incremental `partial_fit` fading-factor evaluator and the
 PSI drift-detection feature from the same architecture doc section are
