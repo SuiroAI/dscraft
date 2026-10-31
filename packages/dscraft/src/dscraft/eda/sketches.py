@@ -2,15 +2,13 @@
 
 This module provides two probabilistic sketches: HyperLogLog (HLL) for distinct-count estimation
 and KLL for quantile estimation. As part of the first-party automl/eda rebuild (see
-``docs/decisions/2026-10-first-party-automl-eda-rebuild.md``), the **HLL sketch is now a first-party
-implementation** (:class:`dscraft.eda._hll.HyperLogLog`, built from scratch on ``numpy`` +
-``hashlib``) -- :func:`estimate_cardinality` no longer wraps ``datasketches.hll_sketch``. The KLL
-quantile sketch below still uses the Apache Software Foundation's
-`datasketches <https://datasketches.apache.org/>`_ library (Apache-2.0, package ``datasketches`` on
-PyPI); its first-party replacement is the next step of the same rebuild, after which the
-``datasketches`` dependency is removed entirely. The ``HLLResult``/``KLLResult`` public result
-types and documented error-bound semantics are unchanged by the swap, so callers (notably
-``LazyEDA``) are unaffected.
+``docs/decisions/2026-10-first-party-automl-eda-rebuild.md``), **both sketches are now first-party
+implementations** built from scratch on ``numpy`` (plus ``hashlib`` for HLL):
+:class:`dscraft.eda._hll.HyperLogLog` behind :func:`estimate_cardinality`, and
+:class:`dscraft.eda._kll.KLL` behind :func:`estimate_quantiles`. Neither wraps the Apache
+``datasketches`` library anymore (that dependency is removed by the same rebuild). The
+``HLLResult``/``KLLResult`` public result types and documented error-bound semantics are unchanged
+by the swap, so callers (notably ``LazyEDA``) are unaffected.
 
 **Real installed API used here** (``pip install datasketches``, verified
 against the installed package via ``help(datasketches.hll_sketch)`` /
@@ -80,9 +78,8 @@ import math
 from dataclasses import dataclass
 from typing import Iterable, Sequence
 
-from datasketches import kll_floats_sketch
-
 from dscraft.eda._hll import HyperLogLog
+from dscraft.eda._kll import KLL
 
 __all__ = [
     "HLLResult",
@@ -305,7 +302,7 @@ def estimate_quantiles(
         if not (0.0 <= q <= 1.0):
             raise ValueError(f"quantiles values must be in [0.0, 1.0], got {q!r}.")
 
-    sketch = kll_floats_sketch(k=k)
+    sketch = KLL(k=k, random_state=0)
     num_values_processed = 0
     for item in values:
         if isinstance(item, bool) or not isinstance(item, (int, float)):
@@ -325,11 +322,11 @@ def estimate_quantiles(
             "docstring for why this raises instead of returning a sentinel like NaN."
         )
 
-    estimates = sketch.get_quantiles(quantiles)
+    estimates = sketch.quantiles(quantiles)
     quantile_estimates = {q: float(v) for q, v in zip(quantiles, estimates)}
     return KLLResult(
         quantile_estimates=quantile_estimates,
-        normalized_rank_error=sketch.normalized_rank_error(False),
+        normalized_rank_error=sketch.normalized_rank_error(),
         k=k,
         num_values_processed=num_values_processed,
     )
