@@ -129,11 +129,19 @@ from dscraft.eda.sketches import (
     estimate_cardinality,
     estimate_quantiles,
 )
+from dscraft.eda._univariate import (
+    CategoricalDescriptor,
+    NumericDescriptor,
+    categorical_descriptor,
+    numeric_descriptor,
+)
 
 __all__ = [
     "EDAProfile",
     "LazyEDA",
     "PlotnineExtraNotInstalledError",
+    "CategoricalDescriptor",
+    "NumericDescriptor",
     "association_heatmap",
     "column_distribution",
 ]
@@ -255,6 +263,16 @@ class EDAProfile:
             :class:`~dscraft.eda.associations.AssociationMatrixResult`
             computed across every profiled column, or ``None`` if the
             source had zero columns (there is nothing to associate).
+        numeric_descriptors: a mapping of column name to
+            :class:`~dscraft.eda._univariate.NumericDescriptor` (mean/var/
+            std, min/max/range, median/MAD/IQR, skewness/kurtosis,
+            coefficient of variation) for every ``"numeric"`` column with
+            at least one finite value. Same absent-rather-than-placeholder
+            convention as ``quantile_results``.
+        categorical_descriptors: a mapping of column name to
+            :class:`~dscraft.eda._univariate.CategoricalDescriptor`
+            (distinct count, mode + frequency, normalized entropy) for
+            every ``"string"`` column with at least one non-null value.
     """
 
     def __init__(
@@ -267,6 +285,8 @@ class EDAProfile:
         cardinality_results: dict[str, HLLResult],
         association_matrix: Optional[AssociationMatrixResult],
         report_data: EDAReportData,
+        numeric_descriptors: Optional[dict[str, NumericDescriptor]] = None,
+        categorical_descriptors: Optional[dict[str, CategoricalDescriptor]] = None,
     ) -> None:
         self.schema_report = schema_report
         self.null_report = null_report
@@ -274,6 +294,10 @@ class EDAProfile:
         self.quantile_results = quantile_results
         self.cardinality_results = cardinality_results
         self.association_matrix = association_matrix
+        self.numeric_descriptors = numeric_descriptors if numeric_descriptors is not None else {}
+        self.categorical_descriptors = (
+            categorical_descriptors if categorical_descriptors is not None else {}
+        )
         self._report_data = report_data
 
     @property
@@ -388,6 +412,8 @@ class LazyEDA:
 
         quantile_results: dict[str, KLLResult] = {}
         cardinality_results: dict[str, HLLResult] = {}
+        numeric_descriptors: dict[str, NumericDescriptor] = {}
+        categorical_descriptors: dict[str, CategoricalDescriptor] = {}
         column_summaries: list[ColumnSummary] = []
 
         for column in schema_report.columns:
@@ -399,6 +425,8 @@ class LazyEDA:
                     row_count=row_count,
                     quantile_results=quantile_results,
                     cardinality_results=cardinality_results,
+                    numeric_descriptors=numeric_descriptors,
+                    categorical_descriptors=categorical_descriptors,
                 )
             )
 
@@ -434,6 +462,8 @@ class LazyEDA:
             cardinality_results=cardinality_results,
             association_matrix=association_result,
             report_data=report_data,
+            numeric_descriptors=numeric_descriptors,
+            categorical_descriptors=categorical_descriptors,
         )
 
     def _summarize_column(
@@ -445,6 +475,8 @@ class LazyEDA:
         row_count: int,
         quantile_results: dict[str, KLLResult],
         cardinality_results: dict[str, HLLResult],
+        numeric_descriptors: dict[str, NumericDescriptor],
+        categorical_descriptors: dict[str, CategoricalDescriptor],
     ) -> ColumnSummary:
         """Build one column's :class:`~dscraft.eda.report.ColumnSummary`.
 
@@ -489,11 +521,15 @@ class LazyEDA:
                     for q, value in kll_result.quantile_estimates.items()
                 }
                 histogram = _numeric_histogram(finite_values, self._histogram_bins)
+                # Univariate distribution descriptor over the same finite values.
+                numeric_descriptors[name] = numeric_descriptor(finite_values)
         elif column.category == _STRING_CATEGORY and non_null_values:
             hll_result = estimate_cardinality(non_null_values, log2_k=self._hll_log2_k)
             cardinality_results[name] = hll_result
             cardinality_estimate = round(hll_result.estimate)
             histogram = _categorical_histogram(non_null_values, self._top_k_categories)
+            # Concentration descriptor over the same non-null categorical values.
+            categorical_descriptors[name] = categorical_descriptor(non_null_values)
         # "boolean"/"temporal"/"other" columns intentionally get neither
         # sketch -- see the module docstring's routing-heuristic section.
 
