@@ -36,7 +36,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from dscraft.automl._boosting import DSBoostClassifier, DSBoostRegressor
+from dscraft.automl._boosting import (
+    DSBoostClassifier,
+    DSBoostRegressor,
+    DSQuantileBoostRegressor,
+)
 from dscraft.automl._forest import (
     DSExtraTreesClassifier,
     DSExtraTreesRegressor,
@@ -62,6 +66,7 @@ _ClassifierType = (
 _RegressorType = (
     DSLinearRegressor
     | DSBoostRegressor
+    | DSQuantileBoostRegressor
     | DSRandomForestRegressor
     | DSExtraTreesRegressor
 )
@@ -92,11 +97,17 @@ SUPPORTED_CLASSIFIERS: dict[str, type[_ClassifierType]] = {
 #:
 #: - ``"DSLinear"`` -- OLS/ridge/lasso/elastic-net (`_linear.DSLinearRegressor`)
 #: - ``"DSBoost"`` -- gradient-boosted trees (`_boosting.DSBoostRegressor`)
+#: - ``"DSQuantileBoost"`` -- first-party gradient-boosted *quantile* regressor
+#:   (`_boosting.DSQuantileBoostRegressor`), pinball loss at a caller-supplied
+#:   ``alpha`` in (0, 1). This is the first-party replacement for the removed
+#:   third-party ``objective="quantile"`` backend; SuiroAI's seeded quantile
+#:   forecasting consumes it via this public factory.
 #: - ``"DSRandomForest"`` -- random forest (`_forest.DSRandomForestRegressor`)
 #: - ``"DSExtraTrees"`` -- extremely-randomized trees (`_forest.DSExtraTreesRegressor`)
 SUPPORTED_REGRESSORS: dict[str, type[_RegressorType]] = {
     "DSLinear": DSLinearRegressor,
     "DSBoost": DSBoostRegressor,
+    "DSQuantileBoost": DSQuantileBoostRegressor,
     "DSRandomForest": DSRandomForestRegressor,
     "DSExtraTrees": DSExtraTreesRegressor,
 }

@@ -7,7 +7,7 @@ name = "dscraft"
 version = "0.2.1"
 description = "DSCraft: a unified, Apache-2.0-licensed, local-first ML tooling platform -- tabular AutoML, data cleaning, time-series forecasting, graph ML, computer vision, LLM fine-tuning, LLM/agent red-teaming, and agent/RAG benchmark eval, all as installable extras of one package. `core` is the thin shared substrate (data-tier conventions, OTel GenAI telemetry helpers, license-isolation policy, shared sandbox executor) used by every other dscraft subpackage."
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12,<3.13"
 license = "Apache-2.0"
 authors = [{ name = "DSCraft" }]
 classifiers = [
@@ -21,6 +21,60 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# ---------------------------------------------------------------------------
+# Unified-backend capability groups (tabular / forecast / eda) + analytics
+# ---------------------------------------------------------------------------
+# These groups implement dscraft's "one dependency, conflict-free versions"
+# contract for the classical/tabular stack. A consumer -- e.g. SuiroAI --
+# depends ONLY on `dscraft[analytics]` (or a single group) and gets a tested,
+# mutually-compatible version set, rather than hand-assembling it. Each window
+# is pinned `>=min,<below`; the machine-readable mirror lives in
+# `src/dscraft/_versions.py` and is enforced at runtime by
+# `dscraft.validate_environment(...)`. Keep the two in sync.
+#
+# FIRST-PARTY RECONCILIATION: the `tabular` group no longer carries
+# xgboost/lightgbm/catboost or imbalanced-learn. The first-party rebuild
+# replaced those third-party backends (boosting -> DSBoost; resampling ->
+# dscraft.automl._resampling), so no boosting/resampling library is a
+# dependency. scikit-learn stays (estimator protocol/plumbing + HDBSCAN until
+# its first-party replacement lands). numpy/pandas/scipy windows are identical
+# across tabular/forecast/eda so any combination co-resolves.
+tabular = [
+    "numpy>=1.26,<2.2",
+    "pandas>=2.1,<2.3",
+    "scikit-learn>=1.4,<1.6",
+    "scipy>=1.11,<1.14",
+]
+# `forecast` powers dscraft.forecast (StatsForecast classical models +
+# backtest + STL/MSTL decomposition). scipy is explicit: decomposition.py
+# imports scipy at module level.
+forecast-analytics = [
+    "numpy>=1.26,<2.2",
+    "pandas>=2.1,<2.3",
+    "scipy>=1.11,<1.14",
+    "statsforecast>=1.7,<2.1",
+    "statsmodels>=0.14,<0.15",
+    "utilsforecast>=0.2,<0.3",
+]
+# `eda-analytics` powers dscraft.eda (Polars lazy profiling + DataSketches
+# HLL/KLL + SciPy association matrix). plotnine stays opt-in via eda-plotnine.
+eda-analytics = [
+    "numpy>=1.26,<2.2",
+    "scipy>=1.11,<1.14",
+    "polars>=0.20,<1.1",
+    "datasketches>=5.0,<6",
+]
+# `analytics`: the union a typical tabular/forecast/eda consumer installs with
+# a single extra. Kept in sync with `_versions.ANALYTICS_GROUPS` (whose group
+# keys are tabular/forecast/eda; the pinned forecast/eda windows live in the
+# `forecast-analytics`/`eda-analytics` extras here to avoid clashing with the
+# legacy open-floor `forecast`/`eda` per-subpackage extras below).
+analytics = [
+    "dscraft[tabular]",
+    "dscraft[forecast-analytics]",
+    "dscraft[eda-analytics]",
+]
+
 # Per-subpackage extras. Installing the base package (`pip install dscraft`)
 # pulls in only `core` (opentelemetry-api, near-zero deps, see dependencies
 # above) -- every subpackage's own dependency universe is opt-in via these

@@ -20,7 +20,7 @@ from dscraft.automl.models import build_model as build_model_direct
 
 #: Every first-party classification / regression backend name the allowlists expose.
 _CLASSIFIER_NAMES = ["DSLogistic", "DSBoost", "DSRandomForest", "DSExtraTrees"]
-_REGRESSOR_NAMES = ["DSLinear", "DSBoost", "DSRandomForest", "DSExtraTrees"]
+_REGRESSOR_NAMES = ["DSLinear", "DSBoost", "DSQuantileBoost", "DSRandomForest", "DSExtraTrees"]
 
 
 def test_public_api_surface() -> None:
@@ -36,6 +36,8 @@ def test_public_api_surface() -> None:
 
 def _small_kwargs(name: str) -> dict:
     """Keep the ensemble backends tiny so the smoke tests stay fast."""
+    if name == "DSQuantileBoost":
+        return {"n_estimators": 15, "random_state": 0, "alpha": 0.5}
     if name in ("DSBoost", "DSRandomForest", "DSExtraTrees"):
         return {"n_estimators": 15, "random_state": 0}
     if name == "DSLogistic":

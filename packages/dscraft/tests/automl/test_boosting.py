@@ -197,3 +197,67 @@ def test_classification_parity_with_xgboost() -> None:
     ours_acc = _p.accuracy_score(y_te, ours.predict(X_te))
     theirs_acc = _p.accuracy_score(y_te, np.asarray(theirs.predict(X_te)))
     assert ours_acc > theirs_acc - 0.05
+
+
+# --- First-party quantile booster (DSQuantileBoost / pinball loss) -------------
+
+import numpy as _np  # noqa: E402
+import pytest as _pytest  # noqa: E402
+
+from dscraft.automl import build_model as _build_model  # noqa: E402
+from dscraft.automl._boosting import DSQuantileBoostRegressor as _DSQB  # noqa: E402
+from dscraft.automl._primitives import pinball_loss as _pinball  # noqa: E402
+
+
+def _qb_data(seed: int = 0):
+    rng = _np.random.default_rng(seed)
+    n = 1500
+    X = rng.normal(size=(n, 3))
+    # heteroskedastic noise so distinct quantiles are genuinely separated
+    y = X[:, 0] * 2.0 + rng.normal(scale=1.0 + 0.5 * _np.abs(X[:, 1]), size=n)
+    return X, y
+
+
+def _fit_qb(alpha: float, seed: int):
+    m = _build_model(
+        "DSQuantileBoost", "regression",
+        alpha=alpha, n_estimators=60, learning_rate=0.1,
+        max_depth=3, subsample=0.7, random_state=seed,
+    )
+    X, y = _qb_data()
+    m.fit(X, y)
+    return m, X, y
+
+
+def test_quantile_boost_seed_reproducible() -> None:
+    """Same (data, params, seed) -> byte-identical predictions; different seed differs."""
+    m1, X, _ = _fit_qb(0.5, 42)
+    m2, _, _ = _fit_qb(0.5, 42)
+    m3, _, _ = _fit_qb(0.5, 7)
+    assert _np.array_equal(m1.predict(X), m2.predict(X))
+    assert not _np.array_equal(m1.predict(X), m3.predict(X))
+
+
+def test_quantile_boost_monotone_in_alpha() -> None:
+    """Higher target quantile -> higher predictions on average (non-crossing in expectation)."""
+    preds = {a: _fit_qb(a, 1)[0].predict(_qb_data()[0]).mean() for a in (0.1, 0.5, 0.9)}
+    assert preds[0.1] < preds[0.5] < preds[0.9]
+
+
+def test_quantile_boost_calibration_and_beats_constant() -> None:
+    """Empirical coverage tracks alpha, and the model beats the constant-quantile baseline."""
+    for alpha in (0.1, 0.5, 0.9):
+        model, X, y = _fit_qb(alpha, 1)
+        pred = model.predict(X)
+        coverage = float(_np.mean(y <= pred))
+        assert abs(coverage - alpha) < 0.06
+        baseline = _np.full(len(y), _np.quantile(y, alpha))
+        assert _pinball(y, pred, alpha=alpha) < _pinball(y, baseline, alpha=alpha)
+
+
+def test_quantile_boost_rejects_bad_alpha() -> None:
+    """alpha outside (0, 1) is rejected at fit (build stays construction-only)."""
+    X, y = _qb_data()
+    for bad in (0.0, 1.0, 1.5, -0.1):
+        with _pytest.raises(ValueError):
+            _DSQB(alpha=bad, n_estimators=5).fit(X, y)

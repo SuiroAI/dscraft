@@ -249,6 +249,40 @@ def absolute_error_gradient(y_true: np.ndarray, y_pred: np.ndarray) -> np.ndarra
     return np.sign(y_pred - y_true)
 
 
+def pinball_loss(y_true: np.ndarray, y_pred: np.ndarray, *, alpha: float) -> float:
+    """Mean pinball (quantile) loss at quantile level ``alpha`` in (0, 1).
+
+    ``L_alpha(y, f) = mean( max(alpha*(y-f), (alpha-1)*(y-f)) )``. Minimized (in the
+    constant case) by the empirical ``alpha``-quantile of ``y``. This is the loss the
+    first-party quantile booster targets; absolute error is the ``alpha=0.5`` special
+    case up to a factor of 2.
+    """
+    if not 0.0 < alpha < 1.0:
+        raise ValueError(f"alpha must be in (0, 1), got {alpha!r}.")
+    y_true = np.asarray(y_true, dtype=np.float64)
+    y_pred = np.asarray(y_pred, dtype=np.float64)
+    diff = y_true - y_pred
+    return float(np.mean(np.maximum(alpha * diff, (alpha - 1.0) * diff)))
+
+
+def quantile_gradient(y_true: np.ndarray, y_pred: np.ndarray, *, alpha: float) -> np.ndarray:
+    """Per-sample gradient of pinball loss w.r.t. the prediction, in ``(pred - y)`` sign.
+
+    d/df of ``max(alpha*(y-f), (alpha-1)*(y-f))`` is ``-alpha`` when ``y > f`` and
+    ``(1 - alpha)`` when ``y <= f``. The boosting loop fits trees to the *negative*
+    gradient via a residual-signed convention (see ``squared_error_gradient`` returning
+    ``pred - y``), so this returns the gradient already in that convention:
+    ``-alpha`` where the prediction is below the target (push up), ``1-alpha`` where it
+    is at/above (push down). Magnitude is constant per side, the standard GBM quantile
+    construction; the per-leaf step size comes from the tree/leaf fit and learning rate.
+    """
+    if not 0.0 < alpha < 1.0:
+        raise ValueError(f"alpha must be in (0, 1), got {alpha!r}.")
+    y_true = np.asarray(y_true, dtype=np.float64)
+    y_pred = np.asarray(y_pred, dtype=np.float64)
+    return np.where(y_true > y_pred, -alpha, 1.0 - alpha)
+
+
 def huber_loss(y_true: np.ndarray, y_pred: np.ndarray, *, delta: float = 1.0) -> float:
     """Mean Huber loss with transition point ``delta`` (quadratic within, linear beyond)."""
     if delta <= 0:

@@ -46,6 +46,20 @@ from dscraft.automl.compile import (
     compile,  # noqa: A004 -- intentional public API name, see architecture doc
 )
 from dscraft.automl.models import SUPPORTED_CLASSIFIERS, SUPPORTED_REGRESSORS, build_model
+from dscraft.automl.quantile import (
+    QUANTILE_KIND,
+    TRAJECTORY_KIND,
+    DSQuantileModel,
+    HDayTrajectory,
+    PerDayDemandDistribution,
+    QuantileModelError,
+    UnsupportedLegacyModelError,
+    fit_quantile_model,
+    load_quantile_model_header,
+    load_trajectory,
+    predict_from_serialized,
+    predict_trajectory,
+)
 from dscraft.automl.resampling import SUPPORTED_RESAMPLERS, build_resampler
 
 __all__ = [
@@ -59,6 +73,19 @@ __all__ = [
     "build_clusterer",
     "SUPPORTED_RESAMPLERS",
     "build_resampler",
+    # First-party quantile model + H-day trajectory contract
+    "QUANTILE_KIND",
+    "TRAJECTORY_KIND",
+    "DSQuantileModel",
+    "HDayTrajectory",
+    "PerDayDemandDistribution",
+    "QuantileModelError",
+    "UnsupportedLegacyModelError",
+    "fit_quantile_model",
+    "load_quantile_model_header",
+    "load_trajectory",
+    "predict_from_serialized",
+    "predict_trajectory",
 ]
 
 __version__ = "0.2.1"

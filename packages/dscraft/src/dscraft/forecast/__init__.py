@@ -41,7 +41,6 @@ from .forecast import (
     prepare_frame,
     validate_input,
 )
-
 __all__ = [
     "ForecastConfig",
     "Tier1ValidationReport",

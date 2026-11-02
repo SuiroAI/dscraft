@@ -42,6 +42,7 @@ from dscraft.automl._tree import DecisionTree
 __all__ = [
     "DSBoostRegressor",
     "DSBoostClassifier",
+    "DSQuantileBoostRegressor",
 ]
 
 
@@ -181,6 +182,100 @@ class DSBoostRegressor(RegressorMixin, _BaseGradientBooster):
 
     def predict(self, X) -> np.ndarray:
         """Predict target values for ``X``."""
+        X = _p.check_array_2d(X, name="X")
+        if X.shape[1] != self.n_features_in_:
+            raise ValueError(f"X has {X.shape[1]} features, expected {self.n_features_in_}.")
+        return self._raw_predict(X)
+
+
+class DSQuantileBoostRegressor(RegressorMixin, _BaseGradientBooster):
+    """First-party gradient-boosted-tree *quantile* regressor (pinball loss).
+
+    Minimizes the pinball loss at a target quantile level ``alpha`` in (0, 1) by additively
+    fitting ``"gradient"``-criterion trees to the pinball (sub)gradient. This is the first-party
+    replacement for the previous third-party ``objective="quantile"`` backend: no boosting library
+    is used, the fit is seeded (``random_state``) and reproducible, and the model is a plain tree
+    ensemble whose prediction is a sum of leaf values -- it serializes to ordinary JSON with no
+    pickled estimator or ONNX blob.
+
+    The initial prediction is the empirical ``alpha``-quantile of the training targets (the
+    loss-minimizing constant), and each round's gradient is the constant-magnitude pinball
+    (sub)gradient (``-alpha`` where the current prediction is below the target, ``1-alpha`` where
+    at/above). Row subsampling (``subsample``) makes it a genuinely stochastic, seeded learner.
+
+    Args: ``alpha`` (the target quantile tau in (0, 1)); all others mirror
+    :class:`_BaseGradientBooster`.
+
+    Attributes (after :meth:`fit`): ``alpha_``, ``init_``, ``estimators_``, ``n_features_in_``,
+    ``n_estimators_``.
+    """
+
+    def __init__(self, *, alpha: float = 0.5, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.alpha = alpha
+
+    def fit(self, X, y) -> "DSQuantileBoostRegressor":
+        """Fit the quantile booster. Returns ``self``."""
+        self._validate_common()
+        if not 0.0 < self.alpha < 1.0:
+            raise ValueError(f"alpha must be in (0, 1), got {self.alpha!r}.")
+        X, y = _p.check_X_y(X, y)
+        y = y.astype(np.float64)
+        self.alpha_ = float(self.alpha)
+        self.n_features_in_ = X.shape[1]
+        rng = _p.as_generator(self.random_state)
+
+        use_val = self.validation_fraction is not None
+        if use_val:
+            train_idx, val_idx = _p.train_validation_split(X.shape[0], self.validation_fraction, rng)
+            X_train, y_train, X_val, y_val = X[train_idx], y[train_idx], X[val_idx], y[val_idx]
+        else:
+            X_train, y_train, X_val, y_val = X, y, None, None
+
+        # Loss-minimizing constant for pinball loss is the empirical alpha-quantile.
+        self.init_ = float(np.quantile(y_train, self.alpha_, method="linear"))
+        raw = np.full(X_train.shape[0], self.init_, dtype=np.float64)
+        self.estimators_ = []
+        best_val = np.inf
+        rounds_no_change = 0
+
+        for _ in range(self.n_estimators):
+            gradients = _p.quantile_gradient(y_train, raw, alpha=self.alpha_)
+            hessians = np.ones_like(gradients)  # constant-curvature surrogate (standard GBM quantile)
+            sample_idx = self._subsample_indices(X_train.shape[0], rng)
+            tree = self._new_tree()
+            tree.fit(X_train[sample_idx], y_train[sample_idx],
+                     gradients=gradients[sample_idx], hessians=hessians[sample_idx])
+            raw += self.learning_rate * tree.predict(X_train)
+            self.estimators_.append(tree)
+
+            if use_val:
+                val_pred = self._raw_predict(X_val)
+                val_loss = _p.pinball_loss(y_val, val_pred, alpha=self.alpha_)
+                if val_loss < best_val - self.tol:
+                    best_val, rounds_no_change = val_loss, 0
+                else:
+                    rounds_no_change += 1
+                    if rounds_no_change >= self.n_iter_no_change:
+                        break
+
+        self.n_estimators_ = len(self.estimators_)
+        return self
+
+    def _subsample_indices(self, n: int, rng) -> np.ndarray:
+        if self.subsample >= 1.0:
+            return np.arange(n)
+        size = max(1, int(round(self.subsample * n)))
+        return rng.choice(n, size=size, replace=False)
+
+    def _raw_predict(self, X: np.ndarray) -> np.ndarray:
+        raw = np.full(X.shape[0], self.init_, dtype=np.float64)
+        for tree in self.estimators_:
+            raw += self.learning_rate * tree.predict(X)
+        return raw
+
+    def predict(self, X) -> np.ndarray:
+        """Predict the ``alpha``-quantile of the target for ``X``."""
         X = _p.check_array_2d(X, name="X")
         if X.shape[1] != self.n_features_in_:
             raise ValueError(f"X has {X.shape[1]} features, expected {self.n_features_in_}.")
